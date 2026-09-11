@@ -2,7 +2,7 @@
 const E=StatementEngine,$=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let companyHome=true;
 let state=E.fresh(false),tab='template',section='income',saveError=false;
-try{const old=CompanyStore.init();if(old)state=E.validate(JSON.parse(old));}catch(e){saveError=true;}
+// Storage hydrates asynchronously now; loading happens in boot() at the end of this file.
 const periods=()=>state.company.comparative?['current','prior']:['current'];
 const periodLabel=p=>(p==='current'?state.company.end:state.company.priorEnd)||p;
 const money=n=>{const a=Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});return n<0?'('+a+')':n===0?'—':a;};
@@ -44,7 +44,7 @@ document.addEventListener('change',e=>{const t=e.target;if(t.id==='restore')retu
 // Save text while typing without replacing the focused editor.
 document.addEventListener('input',e=>{const t=e.target;if(t.dataset.dateFormat){saveDateField(t);return;}if(t.hasAttribute('data-management')){state.management=t.value;save();}else if(t.dataset.note){state.notes.find(n=>n.id===t.dataset.note)[t.dataset.prop]=t.value;save();}else if(t.dataset.company&&t.type!=='checkbox'){state.company[t.dataset.company]=t.value;save();}else if(t.dataset.row&&['label','note'].includes(t.dataset.prop)){state.rows.find(r=>r.id===t.dataset.row)[t.dataset.prop]=t.value;save();}});
 $('#restore').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>3000000)throw Error('Backup must be under 3 MB.');const next=E.validate(JSON.parse(await file.text()));if(confirm('Replace the current draft with this backup?')){state=next;save();render();toast('Draft restored.');}}catch(err){toast('Could not restore: '+err.message);}finally{e.target.value='';}});
-window.addEventListener('beforeprint',()=>{$('#print-report').innerHTML=reportHtml();});render();hoistChanged();
+window.addEventListener('beforeprint',()=>{$('#print-report').innerHTML=reportHtml();});
 
 function renderCompanySwitcher(){const el=$('#company-switcher');if(el)el.innerHTML='<button data-home-action="back" class="back-companies">← All companies</button>';}
 function renderCompanyHome(){const entries=CompanyStore.list();$('.app').hidden=true;const home=$('#company-home');home.hidden=false;home.innerHTML=`<div class="company-top"><a class="home-brand" href="#">Statement Studio</a><span>Financial statement preparation</span></div><div class="company-content"><div class="company-heading"><div><span class="eyebrow">YOUR WORKSPACE</span><h1>Companies</h1><p>Select a company to continue preparing its financial statements.</p></div><button class="primary" data-home-action="new">+ New company</button></div><form id="company-create" hidden><h2>Create company</h2><label>Registered company name<input id="new-company-name" required maxlength="250" placeholder="Enter company name" autocomplete="organization"></label><div><button type="submit" class="primary">Create & open workspace</button><button type="button" data-home-action="cancel">Cancel</button></div><p id="company-create-error" role="alert"></p></form><div class="company-list-head"><h2>Your companies <span>${entries.length}</span></h2><span>Each company has a separate preparation workspace</span></div><div class="company-grid">${entries.map(c=>`<article class="company-card"><div class="company-monogram" aria-hidden="true">${esc((c.name||'C').slice(0,1).toUpperCase())}</div><h2>${esc(c.name)}</h2><p>Reporting period ending <strong>${esc(date(c.end)||'Not set')}</strong></p><div class="company-card-bottom"><span>Saved locally</span><button data-open-company="${esc(c.id)}" aria-label="Open ${esc(c.name)}">Open preparation →</button></div></article>`).join('')}</div><p class="company-home-note">Company files are stored in this browser. Download backups from each preparation workspace to keep a separate copy.</p></div>`;}
@@ -55,3 +55,21 @@ window.addEventListener('storage',e=>{CompanyStore.external(e.key);if(CompanySto
 
 document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;try{if(b.dataset.openCompany){state=CompanyStore.select(b.dataset.openCompany);saveError=false;resetCompanySession();window.scrollTo(0,0);}if(b.dataset.homeAction==='back'){if(!CompanyStore.blocked)CompanyStore.write(state);companyHome=true;render();window.scrollTo(0,0);}if(b.dataset.homeAction==='new'){$('#company-create').hidden=false;$('#new-company-name').focus();}if(b.dataset.homeAction==='cancel')$('#company-create').hidden=true;}catch(err){toast(err.message);}});
 document.addEventListener('submit',e=>{if(e.target.id!=='company-create')return;e.preventDefault();const name=$('#new-company-name').value.trim();if(!name)return;try{state=CompanyStore.create(name);saveError=false;resetCompanySession();window.scrollTo(0,0);}catch(err){$('#company-create-error').textContent=err.message;}});
+
+// Nothing may touch storage until StoreBackend has hydrated from disk / localStorage.
+// Event listeners above are registered immediately; none can fire before the first render.
+async function boot(){
+ try{await StoreBackend.ready;}
+ catch(err){
+  // Never present a blank page: an unreadable store must say so, and must not
+  // be written over by a fresh empty state.
+  const home=$('#company-home');home.hidden=false;
+  home.innerHTML=`<div class="company-content"><div class="company-heading"><div><span class="eyebrow">STORAGE</span><h1>Could not load your companies</h1><p>${esc(err.message)}</p></div></div><p class="company-home-note">Your saved data has not been changed. Close and reopen the application. If this persists, restore a backup from the Backups folder.</p></div>`;
+  return;
+ }
+ try{const old=CompanyStore.init();if(old)state=E.validate(JSON.parse(old));}catch(err){saveError=true;}
+ render();hoistChanged();
+}
+// A failed disk write is reported late, so surface it rather than losing it silently.
+window.addEventListener('statementstudio:save-failed',e=>{saveError=true;const el=$('#saved');if(el)el.textContent='Not saved — download backup';});
+boot();

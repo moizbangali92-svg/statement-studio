@@ -10,7 +10,11 @@ const path = require('path');
 
 const dataDir = () => path.join(app.getPath('userData'), 'companies');
 const backupDir = () => path.join(app.getPath('userData'), 'backups');
+// Undo snapshots are full company states. They live OUTSIDE companies/ so that
+// listCompanies() can never surface a restore point as if it were a company.
+const undoDir = () => path.join(app.getPath('userData'), 'undo');
 const fileFor = (id) => path.join(dataDir(), `${safeId(id)}.json`);
+const undoFileFor = (id) => path.join(undoDir(), `${safeId(id)}.json`);
 
 // Company ids come from the renderer. Never let one escape the data dir.
 function safeId(id) {
@@ -22,6 +26,7 @@ function safeId(id) {
 async function ensureDirs() {
     await fsp.mkdir(dataDir(), { recursive: true });
     await fsp.mkdir(backupDir(), { recursive: true });
+    await fsp.mkdir(undoDir(), { recursive: true });
 }
 
 // ---------------------------------------------------------------- storage
@@ -64,7 +69,38 @@ async function listCompanies() {
 
 async function readCompany(id) {
     await ensureDirs();
-    return fsp.readFile(fileFor(id), 'utf8');
+    try {
+        return await fsp.readFile(fileFor(id), 'utf8');
+    } catch (err) {
+        if (err.code === 'ENOENT') return null;   // absent is not corrupt
+        throw err;
+    }
+}
+
+// ---------------------------------------------------------------- undo
+
+async function readUndo(id) {
+    await ensureDirs();
+    try {
+        return await fsp.readFile(undoFileFor(id), 'utf8');
+    } catch (err) {
+        if (err.code === 'ENOENT') return null;
+        throw err;
+    }
+}
+
+async function writeUndo(id, text) {
+    await ensureDirs();
+    if (typeof text !== 'string') throw new Error('writeUndo expects a JSON string');
+    JSON.parse(text);
+    await writeAtomic(undoFileFor(id), text);
+    return true;
+}
+
+async function clearUndo(id) {
+    await ensureDirs();
+    await fsp.rm(undoFileFor(id), { force: true });
+    return true;
 }
 
 async function writeCompany(id, text) {
@@ -87,6 +123,7 @@ async function deleteCompany(id) {
         if (err.code !== 'ENOENT') throw err;
     }
     await fsp.rm(src, { force: true });
+    await fsp.rm(undoFileFor(id), { force: true });   // no orphaned restore points
     return true;
 }
 
@@ -134,6 +171,9 @@ function registerIpc() {
     ipcMain.handle('cs:write', (_e, id, text) => writeCompany(id, text));
     ipcMain.handle('cs:delete', (_e, id) => deleteCompany(id));
     ipcMain.handle('cs:rename', (_e, id, nextId) => renameCompany(id, nextId));
+    ipcMain.handle('cs:readUndo', (_e, id) => readUndo(id));
+    ipcMain.handle('cs:writeUndo', (_e, id, text) => writeUndo(id, text));
+    ipcMain.handle('cs:clearUndo', (_e, id) => clearUndo(id));
     ipcMain.handle('cs:snapshot', () => snapshotAll());
     ipcMain.handle('cs:dataDir', () => app.getPath('userData'));
     ipcMain.handle('cs:reveal', () => shell.openPath(dataDir()));

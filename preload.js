@@ -13,6 +13,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     remove: (id) => ipcRenderer.invoke('cs:delete', id),
     rename: (id, nextId) => ipcRenderer.invoke('cs:rename', id, nextId),
 
+    // Trial-balance import restore points, kept out of the companies store.
+    readUndo: (id) => ipcRenderer.invoke('cs:readUndo', id),
+    writeUndo: (id, text) => ipcRenderer.invoke('cs:writeUndo', id, text),
+    clearUndo: (id) => ipcRenderer.invoke('cs:clearUndo', id),
+
     // Backup and recovery.
     snapshot: () => ipcRenderer.invoke('cs:snapshot'),
     exportAll: () => ipcRenderer.invoke('cs:exportAll'),
