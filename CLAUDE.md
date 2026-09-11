@@ -156,12 +156,3 @@ browser over `serve.js` and compare output before and after. The reformat commit
 comparing the computed model, the readiness checks, every tab's DOM and the
 generated PDF; that approach is a reasonable template for any refactor claiming
 to preserve behaviour.
-
-## Known dead code
-
-`app.js` still carries the pre-Hoistx report path: `legacyChecks`,
-`checksView`, `noteNo`, `reportRows`, `legacyReportHtml` and `legacyReportView`
-(~275 of its 862 lines). `checks()`, `reportHtml()` and `reportView()` are thin
-shims that delegate to `HoistModel`/`hoist-ui.js` instead. Nothing calls the
-legacy functions. `financialTable()` sits among them but *is* live — the
-schedule editor uses it.
