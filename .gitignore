@@ -1,2 +1,8 @@
 node_modules/
 dist/
+
+# Client data. Backups/ holds company JSON exports and Reports/ holds generated
+# statement PDFs - never commit either.
+Backups/
+Reports/
+*.pdf

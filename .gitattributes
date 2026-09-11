@@ -1,0 +1,8 @@
+# The CSV template is the one source build.js embeds verbatim (base64), without
+# the CRLF -> LF normalisation readText() applies to every other file. Its bytes
+# on disk therefore land in "Statement Studio.html" as-is, so the checkout has to
+# be identical on every machine or the bundle is not reproducible.
+#
+# CRLF is deliberate: the user downloads this template and opens it in Excel on
+# Windows. Stored LF in the repository, checked out CRLF everywhere.
+*.csv text eol=crlf

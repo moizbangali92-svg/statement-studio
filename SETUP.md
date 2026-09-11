@@ -1,44 +1,52 @@
-# Statement Studio - Electron packaging
+# Statement Studio - build and desktop packaging
 
-Written without access to the source, so treat the two marked spots as
-adaptation points. Everything else is boilerplate and should work as-is.
+`Source/` is the truth. `Statement Studio.html` is generated from it by
+`build.js` and should never be edited by hand - the next build overwrites it.
 
-## Before you start
+## Build
 
-**Export every company from the current browser version first.** The Electron
-app has its own empty storage. If you package first and migrate later, you will
-open the new app, see nothing, and think it is broken.
+    node build.js
 
-Also: `git init` and commit before any of this.
+Inlines every `Source/` script, `style.css`, the vendor libraries and the
+embedded report fonts into a single `Statement Studio.html` (~6.9 MB). That one
+file is what the browser shortcut and the Electron window both load.
 
-## Install
+The build is reproducible: rebuilding from a clean checkout produces the
+committed bundle byte for byte. It stays that way because of `.gitattributes` -
+`build.js` embeds `Source/trial-balance-template.csv` verbatim as base64 without
+the CRLF -> LF normalisation it applies to every other source, so that file is
+pinned to CRLF on checkout. Remove that rule and the bundle's bytes start
+depending on which machine built it.
 
-Copy `main.js`, `preload.js`, `package.json`, `desktop-bridge.js` into the
-Statement Studio folder, then:
+## Tests
+
+    node test-import.js
+
+13 storage tests, plain Node, no Electron and no browser. They drive the real
+localStorage adapter against an in-memory work-alike, so they exercise the same
+code path the browser build uses. Run them before packaging.
+
+## Desktop app
 
     npm install
-    npm start
+    npm start          # runs build.js, then electron .
 
-## Two things to adapt
+No adaptation step. `Source/store-backend.js` picks its backend at runtime:
+`window.electronAPI.isDesktop` selects the JSON-file adapter, otherwise it falls
+back to localStorage. `app.js` awaits `StoreBackend.ready` before touching
+storage, so hydration is already handled.
 
-1. **`desktop-bridge.js`, `PREFIX`** - set it to the real localStorage key
-   prefix `company-store.js` uses. Find it with:
+(The earlier `desktop-bridge.js` shim and its two manual adaptation points are
+gone - removed in 94d5821, replaced by the backend abstraction in 5f5f0e3.)
 
-       grep -n "localStorage" Source/company-store.js
+### Export your companies first
 
-2. **Load order** - `desktop-bridge.js` must load before `company-store.js`,
-   and the app must wait for hydration. In `Source/index.html`:
+**Export every company from the browser version before you start using the
+desktop app.** The Electron build has its own empty storage. Package first and
+migrate later and you will open the new app, see nothing, and think it is
+broken.
 
-       <script src="desktop-bridge.js"></script>
-       ...
-       <script>
-         (StatementStudioDesktop.ready || Promise.resolve())
-           .then(() => { /* existing boot call */ });
-       </script>
-
-   The build script must inline it the same way as the other sources.
-
-## What this gives you
+### What the desktop build gives you
 
 - Companies stored as JSON files in `%APPDATA%/Statement Studio/companies/`
   instead of localStorage. Covered by File History, OneDrive, any backup tool.
@@ -47,9 +55,10 @@ Statement Studio folder, then:
 - Deleted companies copied to `backups/` first.
 - A full snapshot on every launch, 30 kept.
 - Corrupt companies still listed, so delete/export can reach them.
-- Writes coalesced to one disk write per 400 ms, so per-keystroke saving is fine.
+- Trial-balance undo records kept outside `companies/`, so a restore point can
+  never surface as if it were a company.
 
-## Build the installer
+## Installer
 
     npm run dist
 
@@ -58,10 +67,12 @@ remove the `icon` line from package.json.
 
 ## Known gaps
 
-- Unsigned. Windows SmartScreen will warn on the installer. Fine for your own
-  machine; get a code-signing certificate before handing it to anyone else.
-- `npm run dist` is wired to run `build.js`, which does not exist yet - that is
-  the Source -> bundle build script. Either write it first or change the
-  `build` script to `echo skip`.
-- Calibri is still embedded. That becomes a real licensing problem the moment
-  you distribute the installer. Swap to Carlito before then.
+- **Fonts.** `Source/report-fonts.js` embeds two ~1.6 MB fonts. If those are
+  Calibri, redistributing the installer redistributes a Microsoft font. Swap to
+  Carlito - metric-compatible, so statements will not reflow - before handing
+  the installer to anyone.
+- **Unsigned.** Windows SmartScreen will warn on the installer. Fine for your
+  own machine; get a code-signing certificate before distributing.
+- **Client data stays out of git.** `Backups/` and `Reports/` hold company JSON
+  exports and generated statement PDFs. They are in `.gitignore`; keep them
+  there.
