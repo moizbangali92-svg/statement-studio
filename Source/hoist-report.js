@@ -1,32 +1,539 @@
-(function(root){
-'use strict';
-const E=root.StatementEngine||(typeof require==='function'?require('./engine.js'):null),M=root.HoistModel||(typeof require==='function'?require('./hoist-model.js'):null);
-const fmt=n=>n===0?'-':n<0?'('+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+')':n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const dt=s=>/^\d{4}-\d{2}-\d{2}$/.test(s)?s.split('-').reverse().join('/'):s||'[not entered]';
-function build(s){const t=M.ensure(s),ps=M.periods(s),c=s.company,period=`For the period ${dt(c.start)} to ${dt(c.end)}`,head=['Particulars',...ps.map(p=>`${dt(p==='current'?c.end:c.priorEnd)}\n${c.currency}`)];
- const P=text=>({type:'p',text}),H=text=>({type:'h',text}),T=(headers,rows,widths)=>({type:'table',headers,rows,widths});const comparative=(label,fn,total=false,note)=>({cells:[label,...(note!==undefined?[String(note||'')]:[]),...ps.map(p=>fmt(fn(p)))],total});
- const accountRows=n=>M.rows(s,n).map(r=>comparative(r.label,p=>r[p]));
- const noteBreakdown=n=>{const rows=accountRows(n);if(!rows.length)return [P('No balance is reported for this category in the periods presented.')];const blocks=[T(head,[...rows,comparative('Total',p=>M.sum(s,n,p),true)])];if(t.explanations?.[n])blocks.push(P(t.explanations[n]));if(c.comparative){const current=M.sum(s,n,'current'),prior=M.sum(s,n,'prior'),change=E.add([current,-prior]);if(change){let text=`The balance changed from ${c.currency} ${fmt(prior)} to ${c.currency} ${fmt(current)}, a movement of ${c.currency} ${fmt(change)}.`;if(prior>0&&current>=0)text+=` This represents a ${Math.abs(change/prior*100).toFixed(1)}% ${change>0?'increase':'decrease'}.`;else if(prior===0)text+=' A percentage movement is not applicable to a nil comparative balance.';blocks.push(P(text));}}return blocks;};
- const companyText=`${c.name||'[Company name]'} (the Company) is a ${t.info.legalForm||'[legal form]'}, incorporated on ${dt(t.info.incorporated)}. Its registration / licence number is ${c.registration||'[number]'}, issued by ${t.info.issuer||'[authority]'}. The registered address is ${c.address||'[address]'}.\n\nThe principal activity is ${c.activity||'[activity]'}.\n\nThese financial statements were authorised for issue by ${t.info.approvalBody||'[authorising body]'} on ${dt(t.info.approvalDate)}. The functional currency is ${t.info.functionalCurrency||'[functional currency]'} and the presentation currency is ${c.currency}.`;
- const managerText=s.management.trim()||`The management presents the financial statements of ${c.name||'[Company name]'} for the period ended ${dt(c.end)}.\n\nPrincipal activity\n${c.activity||'[activity]'}\n\nResults\nRevenue for the period was ${c.currency} ${fmt(E.calc(s,'current').sum('revenue'))}. The ${E.calc(s,'current').profit<0?'loss':'profit'} for the period was ${c.currency} ${fmt(Math.abs(E.calc(s,'current').profit))}.\n\nThe financial statements and accompanying notes set out the financial position and results for the reporting period.`;
- const sections=[{key:'management',title:'General manager’s report',blocks:[P(managerText),P(`For and on behalf of the Company\n\n${c.manager||'[Authorised signatory]'}\n${dt(t.info.approvalDate)}\n\nSignature: ______________________________`)]}];
- if(t.auditorText.trim())sections.push({key:'auditor',title:'Independent auditor’s report - supplied text',blocks:[P(t.auditorText)]});
- const position=[],statementHead=['Particulars','Note',...head.slice(1)];const group=(title,groups)=>{position.push({cells:[title,'',...ps.map(()=> '')],heading:true});for(const g of groups){const byNote=[...new Set(s.rows.filter(r=>r.group===g).map(M.suggest))];for(const n of byNote){const rs=s.rows.filter(r=>r.group===g&&M.suggest(r)===n);if(!rs.some(r=>ps.some(p=>r[p]!==0)))continue;const label=n===8?(g.endsWith('Asset')?'Due from related parties':g==='owner'?'Shareholders’ current account':'Due to related parties'):g==='reserve'?'Reserves':g==='retained'?'Retained earnings / (accumulated losses)':g==='owner'?'Shareholders’ current account':(M.defs[n]?.[0]||E.groups[g]);position.push(comparative(label,p=>E.add(rs.map(r=>r[p])),false,n));}}};
- group('ASSETS - Non-current assets',['noncurrentAsset']);position.push(comparative('Total non-current assets',p=>E.calc(s,p).sum('noncurrentAsset'),true,''));group('Current assets',['currentAsset','cash']);position.push(comparative('Total current assets',p=>E.add([E.calc(s,p).sum('currentAsset'),E.calc(s,p).sum('cash')]),true,''),comparative('TOTAL ASSETS',p=>E.calc(s,p).assets,true,''));group('EQUITY AND LIABILITIES - Equity',['capital','reserve','retained','owner']);position.push(comparative('Total equity',p=>E.calc(s,p).equity,true,''));group('Non-current liabilities',['noncurrentLiability']);position.push(comparative('Total non-current liabilities',p=>E.calc(s,p).sum('noncurrentLiability'),true,''));group('Current liabilities',['currentLiability']);position.push(comparative('Total current liabilities',p=>E.calc(s,p).sum('currentLiability'),true,''),comparative('TOTAL EQUITY AND LIABILITIES',p=>E.add([E.calc(s,p).equity,E.calc(s,p).liabilities]),true,''));
- sections.push({key:'position',title:'Statement of financial position',blocks:[P(`As at ${dt(c.end)}`),T(statementHead,position),P(`Authorised by ${c.manager||'[signatory]'} on ${dt(t.info.approvalDate)}.\nSignature: ______________________________`)]});
- const inc=[];for(const [label,n,sign] of [['Revenue',21,1],['Cost of sales',22,-1]])inc.push(comparative(label,p=>(n===17?E.calc(s,p).sum('tax'):M.sum(s,n,p))*sign,false,n));inc.push(comparative('Gross profit / (loss)',p=>E.calc(s,p).gross,true,''));for(const [label,n,sign] of [['Other income',12,1],['Salaries and other benefits',13,-1],['Administrative, selling and general expenses',14,-1],['Finance costs',23,-1],['Corporate income tax',17,-1]])inc.push(comparative(label,p=>(n===17?E.calc(s,p).sum('tax'):M.sum(s,n,p))*sign,false,n));inc.push(comparative('Profit / (loss) for the period',p=>E.calc(s,p).profit,true,''),comparative('Other comprehensive income',p=>E.calc(s,p).sum('oci'),false,26),comparative('Total comprehensive income / (loss)',p=>E.calc(s,p).comprehensive,true,''));sections.push({key:'income',title:'Statement of comprehensive income',blocks:[T(statementHead,inc)]});
- const equity=[];for(const p of ps.slice().reverse()){const x=s.equity[p],cc=E.calc(s,p);equity.push(H(`Period ended ${dt(p==='current'?c.end:c.priorEnd)}`));const vals=[['Opening balance',x.openCapital,x.openReserve,x.openRetained,x.openOwner],['Profit / (loss)',0,0,cc.profit,0],['Other comprehensive income',0,cc.sum('oci'),0,0],['Capital introduced / (repaid)',x.capitalMovement,0,0,0],['Transfer to reserves',0,x.reserveTransfer,-x.reserveTransfer,0],['Dividends',0,0,-x.dividends,0],['Shareholders’ account movement',0,0,0,x.ownerMovement],['Other retained earnings adjustments',0,0,x.otherRetained,0],['Closing balance',cc.close.capital,cc.close.reserve,cc.close.retained,cc.close.owner]];equity.push(T(['Movement',`Share capital\n${c.currency}`,`Reserves\n${c.currency}`,`Retained earnings\n${c.currency}`,`Shareholders’ account\n${c.currency}`,`Total equity\n${c.currency}`],vals.map((r,i)=>({cells:[r[0],...r.slice(1).map(fmt),fmt(E.add(r.slice(1)))],total:i===8})),[.29,.14,.13,.16,.14,.14]));}sections.push({key:'equity',title:'Statement of changes in equity',blocks:equity});
- const cf=[{cells:['Cash flows from operating activities',...ps.map(()=> '')],heading:true},comparative('Profit / (loss) for the period',p=>E.calc(s,p).profit)];for(const k of ['noncash','working','operatingOther']){const detail=t.cashDetails.filter(r=>r.kind===k);if(detail.length)cf.push(...detail.map(r=>comparative(r.label,p=>r[p])));else cf.push(comparative(E.cashFields[k],p=>s.cash[p][k]));}cf.push(comparative('Net cash from / (used in) operating activities',p=>E.calc(s,p).operating,true));for(const k of ['investing','financing']){cf.push({cells:[`Cash flows from ${k} activities`,...ps.map(()=> '')],heading:true});const detail=t.cashDetails.filter(r=>r.kind===k);if(detail.length)cf.push(...detail.map(r=>comparative(r.label,p=>r[p])));cf.push(comparative(`Net cash from / (used in) ${k} activities`,p=>s.cash[p][k],true));}cf.push(comparative('Exchange effect on cash',p=>s.cash[p].fx),comparative('Net change in cash including exchange effect',p=>E.calc(s,p).change,true),comparative('Cash and cash equivalents at beginning of period',p=>s.cash[p].opening),comparative('Cash and cash equivalents at end of period',p=>E.calc(s,p).closingCash,true));sections.push({key:'cash',title:'Statement of cash flows',blocks:[T(head,cf)]});
- const notes=[H('1. Status and activity'),P(companyText),H('2. Accounting period'),P(`The financial statements cover the period from ${dt(c.start)} to ${dt(c.end)}.${c.comparative?` Comparative amounts cover ${dt(c.priorStart)} to ${dt(c.priorEnd)}.`:' No comparative figures are presented.'}${t.info.periodExplanation?'\n\n'+t.info.periodExplanation:''}`),H('3. Significant accounting policies')];for(const k of M.applicablePolicies(s))notes.push(H(M.policyDefs[k][0]),P(t.policies[k]||'[Policy not entered]'));notes.push(H('4. Critical accounting judgements and estimation uncertainty'),P(t.narrative.estimates||'[Disclosure not entered]'),H('5. Schedule of property, plant and equipment'));
- if(!t.ppe.length)notes.push(P('No supporting fixed-asset schedule has been entered. Refer to the mapped statement balance; complete the schedule before issuing the report.'));else for(const p of ps){notes.push(H(`Period ended ${dt(p==='current'?c.end:c.priorEnd)}`));for(let i=0;i<t.ppe.length;i+=4){const assets=t.ppe.slice(i,i+4),spec=[['Cost at beginning of period',a=>a[p].openCost],['Additions',a=>a[p].additions],['Disposals at cost',a=>-a[p].disposals],['Transfers / adjustments',a=>a[p].transfers],['Cost at end of period',a=>M.ppeClose(a,p).cost,true],['Accumulated depreciation / impairment at beginning',a=>a[p].openDep],['Depreciation charge',a=>a[p].charge],['Accumulated depreciation on disposals',a=>-a[p].disposedDep],['Impairment charge',a=>a[p].impairment],['Other accumulated depreciation movements',a=>a[p].otherDep],['Accumulated depreciation / impairment at end',a=>M.ppeClose(a,p).dep,true],['Net book value at end of period',a=>M.ppeClose(a,p).net,true]];notes.push(T(['Movement',...assets.map(a=>a.label),assets.length===t.ppe.length?'Total':'Subtotal'],spec.map(([label,fn,total])=>({cells:[label,...assets.map(a=>fmt(fn(a))),fmt(E.add(assets.map(fn)))],total}))));}}
- for(const n of [6,7])notes.push(H(n+'. '+M.defs[n][0]),...noteBreakdown(n));notes.push(H('8. Related parties'),P(t.narrative.related||'[Disclosure not entered]'));for(const kind of ['asset','liability','equity','transaction']){const rr=t.related.filter(r=>r.kind===kind);if(rr.length){notes.push(H({asset:'Amounts due from related parties',liability:'Amounts due to related parties',equity:'Shareholders’ current accounts',transaction:'Related-party transactions'}[kind]),T(['Counterparty / relationship',...head.slice(1)],rr.map(r=>comparative(r.name+' / '+r.relationship,p=>r[p]))));for(const r of rr)notes.push(P(r.name+': '+r.terms));}}
- notes.push(H('9. Trade and other payables'),...noteBreakdown(9),H('10. Provision for employees’ end of service benefits'),T(head,[comparative('Opening provision',p=>t.eos[p].opening),comparative('Charge for the period',p=>t.eos[p].charge),comparative('Payments during the period',p=>-t.eos[p].paid),comparative('Other movements',p=>t.eos[p].other),comparative('Closing provision',p=>M.eosClose(t,p),true)]),H('11. Share capital'));
- notes.push(T(['Shareholder / nationality','Nominal value',...ps.map(p=>`${p==='current'?'Current':'Comparative'} shares`)],t.shares.map(r=>({cells:[r.name+' / '+r.nationality,fmt(r.par),...ps.map(p=>r[p].toLocaleString('en-US'))]}))));notes.push(T(head,[comparative('Issued share capital',p=>M.sum(s,11,p),true)]));for(const n of [12,13,14])notes.push(H(n+'. '+M.defs[n][0]),...noteBreakdown(n));
- for(const [n,k,title] of [[15,'risk','Financial instruments - risk management'],[16,'commitments','Contingencies and commitments'],[17,'tax','Corporate income tax'],[18,'events','Subsequent events'],[19,'comparatives','Comparative figures']]){notes.push(H(n+'. '+title),P(k==='comparatives'&&!c.comparative?'No comparative figures are presented for this reporting period.':t.narrative[k]||'[Disclosure not entered]'));if(n===15&&root.HoistDisclosureDrafts)for(const [key,def] of Object.entries(root.HoistDisclosureDrafts.riskDefs))notes.push(H(def[0]),P(t.risks[key]||'[Risk disclosure not entered]'));if(n===17)notes.push(...taxBlocks(s,head));}
- for(const n of [20,21,22,23,24,25,26,27])if(M.rows(s,n).some(r=>ps.some(p=>r[p]!==0)))notes.push(H(n+'. '+M.defs[n][0]),...noteBreakdown(n));
- const reconciliationIssues=M.checks(s).filter(x=>!x.ok&&/reconciliation|continuity|Cash-flow detail|Current \/ deferred tax expense|Current tax payable|Deferred tax (asset|liability|through)/i.test(x.title));
- if(reconciliationIssues.length)notes.unshift(H('Unresolved supporting information - incomplete draft'),P(reconciliationIssues.map(x=>x.title+': '+x.detail).join('\n')));
- sections.push({key:'notes',title:'Notes to the financial statements',blocks:notes});const extra=s.notes.filter(n=>n.body.trim()&&!n.autoGroup);if(extra.length)sections.push({key:'additional',title:'Additional disclosures supplied by management',blocks:extra.flatMap(n=>[H(n.title),P(n.body)])});return {company:c.name||'[Company name]',currency:c.currency,period,sections,ready:M.checks(s).every(x=>x.ok),issues:M.checks(s).filter(x=>!x.ok),illustrative:!!(s.demo||s.illustrative)};}
-function taxBlocks(s,head){const t=M.ensure(s).tax,ps=M.periods(s),T=(title,rows)=>[{type:'h',text:title},{type:'table',headers:head,rows:rows.map(([label,fn,total])=>({cells:[label,...ps.map(p=>fmt(fn(p)))],total}))}];return [{type:'p',text:'Tax registration: '+t.registration+'\nTax regime: '+t.regime+'\n\n'+t.basis},...T('Tax expense recognised in profit or loss',[['Current-period current tax',p=>t[p].currentExpense],['Prior-period current tax adjustments',p=>t[p].priorAdjustment],['Deferred tax expense / (credit)',p=>t[p].deferredExpense],['Total income tax expense / (credit)',p=>root.HoistTax.calc(s,p).totalExpense,true]]),...T('Reconciliation of tax expense',[['Accounting profit / (loss) before tax',p=>root.HoistTax.calc(s,p).pbt],['Reference tax rate (%)',p=>t[p].referenceRate],['Tax at reference rate',p=>root.HoistTax.calc(s,p).reference],['Tax effect of permanent differences',p=>t[p].permanentEffect],['Tax effect of reliefs / different rates',p=>t[p].reliefEffect],['Other tax reconciliation effects',p=>t[p].otherEffect],['Tax expense / (credit)',p=>root.HoistTax.calc(s,p).bridge,true],['Taxable income per reviewed computation',p=>t[p].taxableIncome]]),...T('Current tax payable / (receivable)',[['Opening balance',p=>t[p].openingPayable],['Current tax including prior adjustments',p=>E.add([t[p].currentExpense,t[p].priorAdjustment])],['Tax paid',p=>-t[p].paid],['Other movements',p=>t[p].otherPayable],['Closing balance',p=>t[p].closingPayable,true]]),...T('Deferred tax balances',[['Opening deferred tax asset',p=>t[p].openingDeferredAsset],['Asset movement through profit or loss',p=>t[p].deferredAssetPnl],['Other asset movements',p=>t[p].deferredAssetOther],['Closing deferred tax asset',p=>t[p].closingDeferredAsset,true],['Opening deferred tax liability',p=>t[p].openingDeferredLiability],['Liability movement through profit or loss',p=>t[p].deferredLiabilityPnl],['Other liability movements',p=>t[p].deferredLiabilityOther],['Closing deferred tax liability',p=>t[p].closingDeferredLiability,true]])];}
-root.HoistReport={build,fmt,dt};if(typeof module!=='undefined')module.exports=root.HoistReport;
+(function (root) {
+    'use strict';
+    const E =
+            root.StatementEngine || (typeof require === 'function' ? require('./engine.js') : null),
+        M = root.HoistModel || (typeof require === 'function' ? require('./hoist-model.js') : null);
+    const fmt = (n) =>
+        n === 0
+            ? '-'
+            : n < 0
+              ? '(' +
+                Math.abs(n).toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                }) +
+                ')'
+              : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const dt = (s) =>
+        /^\d{4}-\d{2}-\d{2}$/.test(s) ? s.split('-').reverse().join('/') : s || '[not entered]';
+    function build(s) {
+        const t = M.ensure(s),
+            ps = M.periods(s),
+            c = s.company,
+            period = `For the period ${dt(c.start)} to ${dt(c.end)}`,
+            head = [
+                'Particulars',
+                ...ps.map((p) => `${dt(p === 'current' ? c.end : c.priorEnd)}\n${c.currency}`),
+            ];
+        const P = (text) => ({ type: 'p', text }),
+            H = (text) => ({ type: 'h', text }),
+            T = (headers, rows, widths) => ({ type: 'table', headers, rows, widths });
+        const comparative = (label, fn, total = false, note) => ({
+            cells: [
+                label,
+                ...(note !== undefined ? [String(note || '')] : []),
+                ...ps.map((p) => fmt(fn(p))),
+            ],
+            total,
+        });
+        const accountRows = (n) => M.rows(s, n).map((r) => comparative(r.label, (p) => r[p]));
+        const noteBreakdown = (n) => {
+            const rows = accountRows(n);
+            if (!rows.length)
+                return [P('No balance is reported for this category in the periods presented.')];
+            const blocks = [T(head, [...rows, comparative('Total', (p) => M.sum(s, n, p), true)])];
+            if (t.explanations?.[n]) blocks.push(P(t.explanations[n]));
+            if (c.comparative) {
+                const current = M.sum(s, n, 'current'),
+                    prior = M.sum(s, n, 'prior'),
+                    change = E.add([current, -prior]);
+                if (change) {
+                    let text = `The balance changed from ${c.currency} ${fmt(prior)} to ${c.currency} ${fmt(current)}, a movement of ${c.currency} ${fmt(change)}.`;
+                    if (prior > 0 && current >= 0)
+                        text += ` This represents a ${Math.abs((change / prior) * 100).toFixed(1)}% ${change > 0 ? 'increase' : 'decrease'}.`;
+                    else if (prior === 0)
+                        text +=
+                            ' A percentage movement is not applicable to a nil comparative balance.';
+                    blocks.push(P(text));
+                }
+            }
+            return blocks;
+        };
+        const companyText = `${c.name || '[Company name]'} (the Company) is a ${t.info.legalForm || '[legal form]'}, incorporated on ${dt(t.info.incorporated)}. Its registration / licence number is ${c.registration || '[number]'}, issued by ${t.info.issuer || '[authority]'}. The registered address is ${c.address || '[address]'}.\n\nThe principal activity is ${c.activity || '[activity]'}.\n\nThese financial statements were authorised for issue by ${t.info.approvalBody || '[authorising body]'} on ${dt(t.info.approvalDate)}. The functional currency is ${t.info.functionalCurrency || '[functional currency]'} and the presentation currency is ${c.currency}.`;
+        const managerText =
+            s.management.trim() ||
+            `The management presents the financial statements of ${c.name || '[Company name]'} for the period ended ${dt(c.end)}.\n\nPrincipal activity\n${c.activity || '[activity]'}\n\nResults\nRevenue for the period was ${c.currency} ${fmt(E.calc(s, 'current').sum('revenue'))}. The ${E.calc(s, 'current').profit < 0 ? 'loss' : 'profit'} for the period was ${c.currency} ${fmt(Math.abs(E.calc(s, 'current').profit))}.\n\nThe financial statements and accompanying notes set out the financial position and results for the reporting period.`;
+        const sections = [
+            {
+                key: 'management',
+                title: 'General manager’s report',
+                blocks: [
+                    P(managerText),
+                    P(
+                        `For and on behalf of the Company\n\n${c.manager || '[Authorised signatory]'}\n${dt(t.info.approvalDate)}\n\nSignature: ______________________________`,
+                    ),
+                ],
+            },
+        ];
+        if (t.auditorText.trim())
+            sections.push({
+                key: 'auditor',
+                title: 'Independent auditor’s report - supplied text',
+                blocks: [P(t.auditorText)],
+            });
+        const position = [],
+            statementHead = ['Particulars', 'Note', ...head.slice(1)];
+        const group = (title, groups) => {
+            position.push({ cells: [title, '', ...ps.map(() => '')], heading: true });
+            for (const g of groups) {
+                const byNote = [...new Set(s.rows.filter((r) => r.group === g).map(M.suggest))];
+                for (const n of byNote) {
+                    const rs = s.rows.filter((r) => r.group === g && M.suggest(r) === n);
+                    if (!rs.some((r) => ps.some((p) => r[p] !== 0))) continue;
+                    const label =
+                        n === 8
+                            ? g.endsWith('Asset')
+                                ? 'Due from related parties'
+                                : g === 'owner'
+                                  ? 'Shareholders’ current account'
+                                  : 'Due to related parties'
+                            : g === 'reserve'
+                              ? 'Reserves'
+                              : g === 'retained'
+                                ? 'Retained earnings / (accumulated losses)'
+                                : g === 'owner'
+                                  ? 'Shareholders’ current account'
+                                  : M.defs[n]?.[0] || E.groups[g];
+                    position.push(comparative(label, (p) => E.add(rs.map((r) => r[p])), false, n));
+                }
+            }
+        };
+        group('ASSETS - Non-current assets', ['noncurrentAsset']);
+        position.push(
+            comparative(
+                'Total non-current assets',
+                (p) => E.calc(s, p).sum('noncurrentAsset'),
+                true,
+                '',
+            ),
+        );
+        group('Current assets', ['currentAsset', 'cash']);
+        position.push(
+            comparative(
+                'Total current assets',
+                (p) => E.add([E.calc(s, p).sum('currentAsset'), E.calc(s, p).sum('cash')]),
+                true,
+                '',
+            ),
+            comparative('TOTAL ASSETS', (p) => E.calc(s, p).assets, true, ''),
+        );
+        group('EQUITY AND LIABILITIES - Equity', ['capital', 'reserve', 'retained', 'owner']);
+        position.push(comparative('Total equity', (p) => E.calc(s, p).equity, true, ''));
+        group('Non-current liabilities', ['noncurrentLiability']);
+        position.push(
+            comparative(
+                'Total non-current liabilities',
+                (p) => E.calc(s, p).sum('noncurrentLiability'),
+                true,
+                '',
+            ),
+        );
+        group('Current liabilities', ['currentLiability']);
+        position.push(
+            comparative(
+                'Total current liabilities',
+                (p) => E.calc(s, p).sum('currentLiability'),
+                true,
+                '',
+            ),
+            comparative(
+                'TOTAL EQUITY AND LIABILITIES',
+                (p) => E.add([E.calc(s, p).equity, E.calc(s, p).liabilities]),
+                true,
+                '',
+            ),
+        );
+        sections.push({
+            key: 'position',
+            title: 'Statement of financial position',
+            blocks: [
+                P(`As at ${dt(c.end)}`),
+                T(statementHead, position),
+                P(
+                    `Authorised by ${c.manager || '[signatory]'} on ${dt(t.info.approvalDate)}.\nSignature: ______________________________`,
+                ),
+            ],
+        });
+        const inc = [];
+        for (const [label, n, sign] of [
+            ['Revenue', 21, 1],
+            ['Cost of sales', 22, -1],
+        ])
+            inc.push(
+                comparative(
+                    label,
+                    (p) => (n === 17 ? E.calc(s, p).sum('tax') : M.sum(s, n, p)) * sign,
+                    false,
+                    n,
+                ),
+            );
+        inc.push(comparative('Gross profit / (loss)', (p) => E.calc(s, p).gross, true, ''));
+        for (const [label, n, sign] of [
+            ['Other income', 12, 1],
+            ['Salaries and other benefits', 13, -1],
+            ['Administrative, selling and general expenses', 14, -1],
+            ['Finance costs', 23, -1],
+            ['Corporate income tax', 17, -1],
+        ])
+            inc.push(
+                comparative(
+                    label,
+                    (p) => (n === 17 ? E.calc(s, p).sum('tax') : M.sum(s, n, p)) * sign,
+                    false,
+                    n,
+                ),
+            );
+        inc.push(
+            comparative('Profit / (loss) for the period', (p) => E.calc(s, p).profit, true, ''),
+            comparative('Other comprehensive income', (p) => E.calc(s, p).sum('oci'), false, 26),
+            comparative(
+                'Total comprehensive income / (loss)',
+                (p) => E.calc(s, p).comprehensive,
+                true,
+                '',
+            ),
+        );
+        sections.push({
+            key: 'income',
+            title: 'Statement of comprehensive income',
+            blocks: [T(statementHead, inc)],
+        });
+        const equity = [];
+        for (const p of ps.slice().reverse()) {
+            const x = s.equity[p],
+                cc = E.calc(s, p);
+            equity.push(H(`Period ended ${dt(p === 'current' ? c.end : c.priorEnd)}`));
+            const vals = [
+                ['Opening balance', x.openCapital, x.openReserve, x.openRetained, x.openOwner],
+                ['Profit / (loss)', 0, 0, cc.profit, 0],
+                ['Other comprehensive income', 0, cc.sum('oci'), 0, 0],
+                ['Capital introduced / (repaid)', x.capitalMovement, 0, 0, 0],
+                ['Transfer to reserves', 0, x.reserveTransfer, -x.reserveTransfer, 0],
+                ['Dividends', 0, 0, -x.dividends, 0],
+                ['Shareholders’ account movement', 0, 0, 0, x.ownerMovement],
+                ['Other retained earnings adjustments', 0, 0, x.otherRetained, 0],
+                [
+                    'Closing balance',
+                    cc.close.capital,
+                    cc.close.reserve,
+                    cc.close.retained,
+                    cc.close.owner,
+                ],
+            ];
+            equity.push(
+                T(
+                    [
+                        'Movement',
+                        `Share capital\n${c.currency}`,
+                        `Reserves\n${c.currency}`,
+                        `Retained earnings\n${c.currency}`,
+                        `Shareholders’ account\n${c.currency}`,
+                        `Total equity\n${c.currency}`,
+                    ],
+                    vals.map((r, i) => ({
+                        cells: [r[0], ...r.slice(1).map(fmt), fmt(E.add(r.slice(1)))],
+                        total: i === 8,
+                    })),
+                    [0.29, 0.14, 0.13, 0.16, 0.14, 0.14],
+                ),
+            );
+        }
+        sections.push({ key: 'equity', title: 'Statement of changes in equity', blocks: equity });
+        const cf = [
+            { cells: ['Cash flows from operating activities', ...ps.map(() => '')], heading: true },
+            comparative('Profit / (loss) for the period', (p) => E.calc(s, p).profit),
+        ];
+        for (const k of ['noncash', 'working', 'operatingOther']) {
+            const detail = t.cashDetails.filter((r) => r.kind === k);
+            if (detail.length) cf.push(...detail.map((r) => comparative(r.label, (p) => r[p])));
+            else cf.push(comparative(E.cashFields[k], (p) => s.cash[p][k]));
+        }
+        cf.push(
+            comparative(
+                'Net cash from / (used in) operating activities',
+                (p) => E.calc(s, p).operating,
+                true,
+            ),
+        );
+        for (const k of ['investing', 'financing']) {
+            cf.push({
+                cells: [`Cash flows from ${k} activities`, ...ps.map(() => '')],
+                heading: true,
+            });
+            const detail = t.cashDetails.filter((r) => r.kind === k);
+            if (detail.length) cf.push(...detail.map((r) => comparative(r.label, (p) => r[p])));
+            cf.push(
+                comparative(`Net cash from / (used in) ${k} activities`, (p) => s.cash[p][k], true),
+            );
+        }
+        cf.push(
+            comparative('Exchange effect on cash', (p) => s.cash[p].fx),
+            comparative(
+                'Net change in cash including exchange effect',
+                (p) => E.calc(s, p).change,
+                true,
+            ),
+            comparative(
+                'Cash and cash equivalents at beginning of period',
+                (p) => s.cash[p].opening,
+            ),
+            comparative(
+                'Cash and cash equivalents at end of period',
+                (p) => E.calc(s, p).closingCash,
+                true,
+            ),
+        );
+        sections.push({ key: 'cash', title: 'Statement of cash flows', blocks: [T(head, cf)] });
+        const notes = [
+            H('1. Status and activity'),
+            P(companyText),
+            H('2. Accounting period'),
+            P(
+                `The financial statements cover the period from ${dt(c.start)} to ${dt(c.end)}.${c.comparative ? ` Comparative amounts cover ${dt(c.priorStart)} to ${dt(c.priorEnd)}.` : ' No comparative figures are presented.'}${t.info.periodExplanation ? '\n\n' + t.info.periodExplanation : ''}`,
+            ),
+            H('3. Significant accounting policies'),
+        ];
+        for (const k of M.applicablePolicies(s))
+            notes.push(H(M.policyDefs[k][0]), P(t.policies[k] || '[Policy not entered]'));
+        notes.push(
+            H('4. Critical accounting judgements and estimation uncertainty'),
+            P(t.narrative.estimates || '[Disclosure not entered]'),
+            H('5. Schedule of property, plant and equipment'),
+        );
+        if (!t.ppe.length)
+            notes.push(
+                P(
+                    'No supporting fixed-asset schedule has been entered. Refer to the mapped statement balance; complete the schedule before issuing the report.',
+                ),
+            );
+        else
+            for (const p of ps) {
+                notes.push(H(`Period ended ${dt(p === 'current' ? c.end : c.priorEnd)}`));
+                for (let i = 0; i < t.ppe.length; i += 4) {
+                    const assets = t.ppe.slice(i, i + 4),
+                        spec = [
+                            ['Cost at beginning of period', (a) => a[p].openCost],
+                            ['Additions', (a) => a[p].additions],
+                            ['Disposals at cost', (a) => -a[p].disposals],
+                            ['Transfers / adjustments', (a) => a[p].transfers],
+                            ['Cost at end of period', (a) => M.ppeClose(a, p).cost, true],
+                            [
+                                'Accumulated depreciation / impairment at beginning',
+                                (a) => a[p].openDep,
+                            ],
+                            ['Depreciation charge', (a) => a[p].charge],
+                            ['Accumulated depreciation on disposals', (a) => -a[p].disposedDep],
+                            ['Impairment charge', (a) => a[p].impairment],
+                            ['Other accumulated depreciation movements', (a) => a[p].otherDep],
+                            [
+                                'Accumulated depreciation / impairment at end',
+                                (a) => M.ppeClose(a, p).dep,
+                                true,
+                            ],
+                            ['Net book value at end of period', (a) => M.ppeClose(a, p).net, true],
+                        ];
+                    notes.push(
+                        T(
+                            [
+                                'Movement',
+                                ...assets.map((a) => a.label),
+                                assets.length === t.ppe.length ? 'Total' : 'Subtotal',
+                            ],
+                            spec.map(([label, fn, total]) => ({
+                                cells: [
+                                    label,
+                                    ...assets.map((a) => fmt(fn(a))),
+                                    fmt(E.add(assets.map(fn))),
+                                ],
+                                total,
+                            })),
+                        ),
+                    );
+                }
+            }
+        for (const n of [6, 7]) notes.push(H(n + '. ' + M.defs[n][0]), ...noteBreakdown(n));
+        notes.push(H('8. Related parties'), P(t.narrative.related || '[Disclosure not entered]'));
+        for (const kind of ['asset', 'liability', 'equity', 'transaction']) {
+            const rr = t.related.filter((r) => r.kind === kind);
+            if (rr.length) {
+                notes.push(
+                    H(
+                        {
+                            asset: 'Amounts due from related parties',
+                            liability: 'Amounts due to related parties',
+                            equity: 'Shareholders’ current accounts',
+                            transaction: 'Related-party transactions',
+                        }[kind],
+                    ),
+                    T(
+                        ['Counterparty / relationship', ...head.slice(1)],
+                        rr.map((r) => comparative(r.name + ' / ' + r.relationship, (p) => r[p])),
+                    ),
+                );
+                for (const r of rr) notes.push(P(r.name + ': ' + r.terms));
+            }
+        }
+        notes.push(
+            H('9. Trade and other payables'),
+            ...noteBreakdown(9),
+            H('10. Provision for employees’ end of service benefits'),
+            T(head, [
+                comparative('Opening provision', (p) => t.eos[p].opening),
+                comparative('Charge for the period', (p) => t.eos[p].charge),
+                comparative('Payments during the period', (p) => -t.eos[p].paid),
+                comparative('Other movements', (p) => t.eos[p].other),
+                comparative('Closing provision', (p) => M.eosClose(t, p), true),
+            ]),
+            H('11. Share capital'),
+        );
+        notes.push(
+            T(
+                [
+                    'Shareholder / nationality',
+                    'Nominal value',
+                    ...ps.map((p) => `${p === 'current' ? 'Current' : 'Comparative'} shares`),
+                ],
+                t.shares.map((r) => ({
+                    cells: [
+                        r.name + ' / ' + r.nationality,
+                        fmt(r.par),
+                        ...ps.map((p) => r[p].toLocaleString('en-US')),
+                    ],
+                })),
+            ),
+        );
+        notes.push(T(head, [comparative('Issued share capital', (p) => M.sum(s, 11, p), true)]));
+        for (const n of [12, 13, 14]) notes.push(H(n + '. ' + M.defs[n][0]), ...noteBreakdown(n));
+        for (const [n, k, title] of [
+            [15, 'risk', 'Financial instruments - risk management'],
+            [16, 'commitments', 'Contingencies and commitments'],
+            [17, 'tax', 'Corporate income tax'],
+            [18, 'events', 'Subsequent events'],
+            [19, 'comparatives', 'Comparative figures'],
+        ]) {
+            notes.push(
+                H(n + '. ' + title),
+                P(
+                    k === 'comparatives' && !c.comparative
+                        ? 'No comparative figures are presented for this reporting period.'
+                        : t.narrative[k] || '[Disclosure not entered]',
+                ),
+            );
+            if (n === 15 && root.HoistDisclosureDrafts)
+                for (const [key, def] of Object.entries(root.HoistDisclosureDrafts.riskDefs))
+                    notes.push(H(def[0]), P(t.risks[key] || '[Risk disclosure not entered]'));
+            if (n === 17) notes.push(...taxBlocks(s, head));
+        }
+        for (const n of [20, 21, 22, 23, 24, 25, 26, 27])
+            if (M.rows(s, n).some((r) => ps.some((p) => r[p] !== 0)))
+                notes.push(H(n + '. ' + M.defs[n][0]), ...noteBreakdown(n));
+        const reconciliationIssues = M.checks(s).filter(
+            (x) =>
+                !x.ok &&
+                /reconciliation|continuity|Cash-flow detail|Current \/ deferred tax expense|Current tax payable|Deferred tax (asset|liability|through)/i.test(
+                    x.title,
+                ),
+        );
+        if (reconciliationIssues.length)
+            notes.unshift(
+                H('Unresolved supporting information - incomplete draft'),
+                P(reconciliationIssues.map((x) => x.title + ': ' + x.detail).join('\n')),
+            );
+        sections.push({ key: 'notes', title: 'Notes to the financial statements', blocks: notes });
+        const extra = s.notes.filter((n) => n.body.trim() && !n.autoGroup);
+        if (extra.length)
+            sections.push({
+                key: 'additional',
+                title: 'Additional disclosures supplied by management',
+                blocks: extra.flatMap((n) => [H(n.title), P(n.body)]),
+            });
+        return {
+            company: c.name || '[Company name]',
+            currency: c.currency,
+            period,
+            sections,
+            ready: M.checks(s).every((x) => x.ok),
+            issues: M.checks(s).filter((x) => !x.ok),
+            illustrative: !!(s.demo || s.illustrative),
+        };
+    }
+    function taxBlocks(s, head) {
+        const t = M.ensure(s).tax,
+            ps = M.periods(s),
+            T = (title, rows) => [
+                { type: 'h', text: title },
+                {
+                    type: 'table',
+                    headers: head,
+                    rows: rows.map(([label, fn, total]) => ({
+                        cells: [label, ...ps.map((p) => fmt(fn(p)))],
+                        total,
+                    })),
+                },
+            ];
+        return [
+            {
+                type: 'p',
+                text:
+                    'Tax registration: ' +
+                    t.registration +
+                    '\nTax regime: ' +
+                    t.regime +
+                    '\n\n' +
+                    t.basis,
+            },
+            ...T('Tax expense recognised in profit or loss', [
+                ['Current-period current tax', (p) => t[p].currentExpense],
+                ['Prior-period current tax adjustments', (p) => t[p].priorAdjustment],
+                ['Deferred tax expense / (credit)', (p) => t[p].deferredExpense],
+                [
+                    'Total income tax expense / (credit)',
+                    (p) => root.HoistTax.calc(s, p).totalExpense,
+                    true,
+                ],
+            ]),
+            ...T('Reconciliation of tax expense', [
+                ['Accounting profit / (loss) before tax', (p) => root.HoistTax.calc(s, p).pbt],
+                ['Reference tax rate (%)', (p) => t[p].referenceRate],
+                ['Tax at reference rate', (p) => root.HoistTax.calc(s, p).reference],
+                ['Tax effect of permanent differences', (p) => t[p].permanentEffect],
+                ['Tax effect of reliefs / different rates', (p) => t[p].reliefEffect],
+                ['Other tax reconciliation effects', (p) => t[p].otherEffect],
+                ['Tax expense / (credit)', (p) => root.HoistTax.calc(s, p).bridge, true],
+                ['Taxable income per reviewed computation', (p) => t[p].taxableIncome],
+            ]),
+            ...T('Current tax payable / (receivable)', [
+                ['Opening balance', (p) => t[p].openingPayable],
+                [
+                    'Current tax including prior adjustments',
+                    (p) => E.add([t[p].currentExpense, t[p].priorAdjustment]),
+                ],
+                ['Tax paid', (p) => -t[p].paid],
+                ['Other movements', (p) => t[p].otherPayable],
+                ['Closing balance', (p) => t[p].closingPayable, true],
+            ]),
+            ...T('Deferred tax balances', [
+                ['Opening deferred tax asset', (p) => t[p].openingDeferredAsset],
+                ['Asset movement through profit or loss', (p) => t[p].deferredAssetPnl],
+                ['Other asset movements', (p) => t[p].deferredAssetOther],
+                ['Closing deferred tax asset', (p) => t[p].closingDeferredAsset, true],
+                ['Opening deferred tax liability', (p) => t[p].openingDeferredLiability],
+                ['Liability movement through profit or loss', (p) => t[p].deferredLiabilityPnl],
+                ['Other liability movements', (p) => t[p].deferredLiabilityOther],
+                ['Closing deferred tax liability', (p) => t[p].closingDeferredLiability, true],
+            ]),
+        ];
+    }
+    root.HoistReport = { build, fmt, dt };
+    if (typeof module !== 'undefined') module.exports = root.HoistReport;
 })(globalThis);

@@ -1,28 +1,517 @@
 'use strict';
-let hoistPdfUrl='',hoistPdfTimer,hoistPdfGeneration=0,hoistPdfError='';
-const HM=HoistModel;
-function taxView(){const t=HM.ensure(state).tax;return title('NOTE 17','Corporate income tax','Provide the reviewed tax computation and disclosures. The report calculates reconciliation totals automatically.')+`<section class="card">${hoistText('Tax registration number / registration position','tax.registration',t.registration,'Enter TRN or explain the reviewed reason no registration is applicable.',3)}${hoistText('Tax regime and rates applicable','tax.regime',t.regime,'Describe the actual regime and applicable rates, including any substantiated free-zone position, exemption or relief.',4)}${hoistText('Tax computation and deferred-tax basis','tax.basis',t.basis,'Explain the reconciliation, reliefs, tax losses, temporary differences and recognition of deferred tax. Explicitly state nil where appropriate.',6)}<p class="muted">Use the tax computation approved for this entity and period. A nil expense does not by itself establish an exemption or remove filing requirements. <a href="https://www.tax.gov.ae/en/taxes/corporate.tax/faqs.aspx" target="_blank" rel="noopener">FTA corporate tax guidance</a></p></section><section class="card"><h2>Expense, effective tax and balance movements</h2><div class="table-scroll"><table class="editor">${headers('Tax schedule input')}<tbody>${Object.entries(HoistTax.fields).map(([k,l])=>`<tr><td>${l}</td>${periods().map(p=>`<td>${numberInput(t[p][k],`data-hoist-path="tax.${p}.${k}"`,l+' '+p)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></section><div class="hint">Map current tax payables / receivables and non-current deferred tax balances to note 17 in Note mapping. Tax expense remains a profit-or-loss category. Taxable income and the effective-tax bridge are separate disclosures; this app does not determine tax eligibility.</div>`;}
-function hoistText(label,path,value,hint='',rows=5){return `<label>${esc(label)}<textarea rows="${rows}" data-hoist-path="${path}" placeholder="${esc(hint)}">${esc(value||'')}</textarea></label>`;}
-function hoistInput(label,path,value,type='text'){return `<label>${esc(label)}<input type="${type==='date'?'text':type}" ${type==='date'?'data-date-format="dmy" placeholder="DD/MM/YYYY" maxlength="10"':''} data-hoist-path="${path}" value="${esc(type==='date'?(value?HoistReport.dt(value):''):value??'')}" ${type==='number'?'step="0.01" min="-1000000000000" max="1000000000000"':''}></label>`;}
-function templateView(){const t=HM.ensure(state);return title('HOISTX 2024 TEMPLATE','Entity & authorisation','Complete these fields once. They populate the cover, manager’s report and notes automatically.')+`<section class="card"><h2>Reporting entity</h2><div class="form-grid">${[['Legal form','legalForm'],['Licensing authority','issuer'],['Functional currency','functionalCurrency'],['Authorising body','approvalBody']].map(([l,k])=>hoistInput(l,'info.'+k,t.info[k])).join('')}${hoistInput('Incorporation date','info.incorporated',t.info.incorporated,'date')}${hoistInput('Authorisation date','info.approvalDate',t.info.approvalDate,'date')}</div>${hoistText('Explanation of reporting period (if needed)','info.periodExplanation',t.info.periodExplanation,'Explain an initial or unusually long / short period.',3)}</section><section class="card"><h2>Manager’s report</h2><p class="muted">If the management report in Company details is blank, the report is assembled from the company’s activity, dates, revenue, profit and signatory. A custom management report takes precedence.</p><h2>Auditor’s report (optional)</h2><p class="muted">Only paste wording supplied by your auditor. It is included verbatim as supplied text; the app does not create an audit opinion or signatures.</p>${hoistText('Auditor-supplied report text','auditorText',t.auditorText,'Leave blank for management-prepared financial statements.',8)}</section>`;}
-function policyView(){const t=HM.ensure(state),keys=HM.applicablePolicies(state);return title('ACCOUNTING POLICIES','Policies for this entity','Review the prepared wording and replace each [CONFIRM: ...] with your company information. These policies appear in note 3.')+`<div class="hint">The Hoistx sample is the layout reference. Its accounting framework, tax position and business facts are not assumed to apply to your company. Use English text for this report.</div>`+keys.map(k=>`<section class="card">${hoistText(HM.policyDefs[k][0],'policies.'+k,t.policies[k],HM.policyDefs[k][1],6)}</section>`).join('');}
-function disclosureView(){const t=HM.ensure(state);return title('NUMBERED DISCLOSURES','Disclosures & explanations','Complete each relevant disclosure. State “none” explicitly where that is the reviewed conclusion.')+Object.entries(HM.narrativeDefs).filter(([k])=>k!=='comparatives'||state.company.comparative).map(([k,[label,hint]])=>`<section class="card">${hoistText(label,'narrative.'+k,t.narrative[k],hint,6)}</section>`).join('')+Object.entries(HoistDisclosureDrafts.riskDefs).map(([k,[label]])=>`<section class="card">${hoistText('15. '+label,'risks.'+k,t.risks[k],'',6)}</section>`).join('')+`<section class="card"><h2>Additional wording for financial notes</h2><p class="muted">The figures and comparative movements are automatic. Add reasons, restrictions and other disclosures below. Do not describe increases as purchases or cash flows unless the supporting information establishes that.</p>${Object.entries(HM.defs).filter(([n])=>HM.rows(state,n).some(r=>r.current||r.prior)).map(([n,[name]])=>hoistText(n+'. '+name,'explanations.'+n,t.explanations?.[n]||'','Optional additional disclosure or explanation.',3)).join('')}</section>`;}
-function mappingView(){const t=HM.ensure(state);return title('STATEMENT CLASSIFICATION','Note mapping','Review which Hoistx note each financial line belongs to. Mapping also controls statement subtotals.')+`<div class="hint">Notes 1–19 follow Hoistx’s sequence. Notes 20–27 cover additional categories when your figures require them. Trial balance import proposes categories; confirm this mapping after an import.</div><section class="card table-card"><div class="table-scroll"><table class="tb-table"><thead><tr><th>Account</th><th>Statement category</th><th>Report note</th></tr></thead><tbody>${state.rows.map(r=>`<tr><td>${esc(r.label)}</td><td>${esc(E.groups[r.group])}</td><td><select data-hoist-map="${esc(r.id)}" aria-label="Note for ${esc(r.label)}">${(r.group==='tax'?[[17,['Corporate income tax']]]:Object.entries(HM.defs).filter(([n,d])=>d[1].includes(r.group))).map(([n,d])=>`<option value="${n}" ${HM.suggest(r)===Number(n)?'selected':''}>${n}. ${esc(d[0])}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div></section><button class="primary" data-hoist-action="mapping">Confirm account mapping</button><p class="muted">${t.mappingReviewed===HM.mappingStamp(state)?'Mapping confirmed.':'Mapping needs review.'}</p>`;}
-function scheduleCells(key,row,index,fields){return Object.entries(fields).map(([field,label])=>`<tr><td>${esc(label)}</td>${periods().map(p=>`<td>${numberInput(row[p][field],`data-hoist-path="${key}.${index}.${p}.${field}"`,label+' '+p)}</td>`).join('')}</tr>`).join('');}
-function supportView(){const t=HM.ensure(state);return title('SUPPORTING SCHEDULES','Assets, obligations & ownership','Schedules reconcile to the mapped statement balances. Enter positive disposals and payments; the app deducts them.')+`<section class="card"><h2>5. Property, plant and equipment</h2>${t.ppe.map((r,i)=>`<div class="support-item"><div class="form-grid">${hoistInput('Asset class','ppe.'+i+'.label',r.label)}<button data-hoist-remove="ppe.${i}">Remove asset class</button></div><div class="table-scroll"><table class="editor">${headers('Cost and accumulated depreciation')}<tbody>${scheduleCells('ppe',r,i,HM.ppeFields)}<tr class="total"><td>Closing net book value</td>${periods().map(p=>`<td class="numeric">${money(HM.ppeClose(r,p).net)}</td>`).join('')}</tr></tbody></table></div></div>`).join('')}<button data-hoist-add="ppe">＋ Add asset class</button></section><section class="card"><h2>10. Employee end of service benefits</h2><div class="table-scroll"><table class="editor">${headers('Movement')}<tbody>${Object.entries(HM.eosFields).map(([k,label])=>`<tr><td>${label}</td>${periods().map(p=>`<td>${numberInput(t.eos[p][k],`data-hoist-path="eos.${p}.${k}"`,label+' '+p)}</td>`).join('')}</tr>`).join('')}<tr class="total"><td>Closing provision</td>${periods().map(p=>`<td class="numeric">${money(HM.eosClose(t,p))}</td>`).join('')}</tr></tbody></table></div></section><section class="card"><h2>8. Related-party balances and transactions</h2>${t.related.map((r,i)=>`<div class="support-item"><div class="form-grid">${hoistInput('Counterparty','related.'+i+'.name',r.name)}${hoistInput('Relationship','related.'+i+'.relationship',r.relationship)}<label>Classification<select data-hoist-path="related.${i}.kind">${Object.entries({asset:'Due from - asset',liability:'Due to - liability',equity:'Shareholders’ equity account',transaction:'Transaction during the period'}).map(([k,l])=>`<option value="${k}" ${r.kind===k?'selected':''}>${l}</option>`).join('')}</select></label>${periods().map(p=>hoistInput(periodLabel(p),'related.'+i+'.'+p,r[p],'number')).join('')}</div>${hoistText('Terms, interest, security and repayment','related.'+i+'.terms',r.terms,'Describe the actual terms.',3)}<button data-hoist-remove="related.${i}">Remove counterparty</button></div>`).join('')}<button data-hoist-add="related">＋ Add counterparty / transaction</button></section><section class="card"><h2>11. Shareholders</h2>${t.shares.map((r,i)=>`<div class="support-item"><div class="form-grid">${hoistInput('Shareholder','shares.'+i+'.name',r.name)}${hoistInput('Nationality','shares.'+i+'.nationality',r.nationality)}${hoistInput('Nominal value per share','shares.'+i+'.par',r.par,'number')}${periods().map(p=>hoistInput('Shares at '+periodLabel(p),'shares.'+i+'.'+p,r[p],'number')).join('')}</div><button data-hoist-remove="shares.${i}">Remove shareholder</button></div>`).join('')}<button data-hoist-add="shares">＋ Add shareholder</button></section><div class="hint">Receivables, payables, cash and expense schedules are generated from the mapped financial lines. Add or split lines in Financial figures where a more detailed breakdown is needed.</div>`;}
-function cashDetailView(){const t=HM.ensure(state);return title('CASH-FLOW SUPPORT','Cash-flow details','Explain the amounts entered in the cash-flow schedule. Positive amounts are inflows or add-backs; negative amounts are outflows or deductions.')+`<section class="card"><p class="muted">Profit is linked automatically. Enter actual cash movements and non-cash adjustments. Do not infer additions or repayments solely from closing balances.</p><button data-hoist-action="seedcash">Create rows from existing cash-flow totals</button><p class="muted">This adds one row for each missing non-zero category. Replace the generic description with the actual movements as needed.</p>${t.cashDetails.map((r,i)=>`<div class="support-item"><div class="form-grid">${hoistInput('Movement description','cashDetails.'+i+'.label',r.label)}<label>Category<select data-hoist-path="cashDetails.${i}.kind">${Object.entries(E.cashFields).filter(([k])=>k!=='opening').map(([k,l])=>`<option value="${k}" ${r.kind===k?'selected':''}>${l}</option>`).join('')}</select></label>${periods().map(p=>hoistInput(periodLabel(p),'cashDetails.'+i+'.'+p,r[p],'number')).join('')}</div><button data-hoist-remove="cashDetails.${i}">Remove movement</button></div>`).join('')}<button data-hoist-add="cashDetails">＋ Add movement</button></section>`;}
-function readinessCategory(c){if(['Final input review','Statement note mapping'].includes(c.title))return 'review';if(/reconciliation|continuity|^Financial position |^Cash-flow detail:|^Related-party (asset|liability|equity) balances |^Current \/ deferred tax expense |^Current tax payable |^Deferred tax (asset|liability|through profit)/i.test(c.title))return 'reconcile';return 'information';}
-function readinessSummary(list){const pending=list.filter(c=>!c.ok);if(!pending.length)return 'Report ready';const n={information:0,reconcile:0,review:0};pending.forEach(c=>n[readinessCategory(c)]++);return [n.information?`${n.information} information items to complete`:'',n.reconcile?`${n.reconcile} reconciliation issues`:'',n.review?`${n.review} reviews pending`:''].filter(Boolean).join(' · ');}
-function preparationIdentity(){return (state.company.name||'Untitled company')+' · '+(state.company.start?date(state.company.start):'Start date not set')+' – '+(state.company.end?date(state.company.end):'End date not set');}
-function readinessView(){const list=HM.checks(state),pending=list.filter(x=>!x.ok);const card=c=>`<section class="check ${c.ok?'pass':'fail'}"><span>${c.ok?'✓':readinessCategory(c)==='reconcile'?'!':'○'}</span><div><h3>${esc(c.title.replace(/\d{4}-\d{2}-\d{2}/g,date))}</h3><p>${esc(c.detail)}</p></div>${!c.ok&&c.tab!=='readiness'?`<button data-tab="${c.tab}">${readinessCategory(c)==='reconcile'?'Check figures':'Complete'}</button>`:''}</section>`;return title('PREPARATION STATUS','Report readiness',readinessSummary(list))+`<section class="card"><h2>${esc(preparationIdentity())}</h2><p>Complete the information, reconcile the figures, then confirm the final review to prepare your report.</p><button class="primary" data-hoist-action="review">Confirm final input review</button><button data-tab="report">View report</button><p id="hoist-pdf-status" role="status">${hoistPdfError?esc(hoistPdfError):hoistPdfUrl?'PDF is ready.':pending.length?'Preparation in progress.':'Preparing PDF…'}</p></section>`+[['information','Information to complete','Missing details, disclosures and inputs needing confirmation.'],['reconcile','Reconciliation issues','Balances or supporting schedules that do not agree.'],['review','Reviews pending','Confirm the account mapping and final inputs.']].map(([key,label,description])=>{const items=pending.filter(c=>readinessCategory(c)===key);return `<section class="readiness-group"><h2>${label} <small>(${items.length})</small></h2><p class="muted">${description}</p>${items.length?'<div class="checks">'+items.map(card).join('')+'</div>':'<p>No outstanding items.</p>'}</section>`;}).join('')+`<details><summary>Completed checks (${list.length-pending.length})</summary><div class="checks">${list.filter(c=>c.ok).map(card).join('')}</div></details>`;}
+let hoistPdfUrl = '',
+    hoistPdfTimer,
+    hoistPdfGeneration = 0,
+    hoistPdfError = '';
+const HM = HoistModel;
+function taxView() {
+    const t = HM.ensure(state).tax;
+    return (
+        title(
+            'NOTE 17',
+            'Corporate income tax',
+            'Provide the reviewed tax computation and disclosures. The report calculates reconciliation totals automatically.',
+        ) +
+        `<section class="card">${hoistText('Tax registration number / registration position', 'tax.registration', t.registration, 'Enter TRN or explain the reviewed reason no registration is applicable.', 3)}${hoistText('Tax regime and rates applicable', 'tax.regime', t.regime, 'Describe the actual regime and applicable rates, including any substantiated free-zone position, exemption or relief.', 4)}${hoistText('Tax computation and deferred-tax basis', 'tax.basis', t.basis, 'Explain the reconciliation, reliefs, tax losses, temporary differences and recognition of deferred tax. Explicitly state nil where appropriate.', 6)}<p class="muted">Use the tax computation approved for this entity and period. A nil expense does not by itself establish an exemption or remove filing requirements. <a href="https://www.tax.gov.ae/en/taxes/corporate.tax/faqs.aspx" target="_blank" rel="noopener">FTA corporate tax guidance</a></p></section><section class="card"><h2>Expense, effective tax and balance movements</h2><div class="table-scroll"><table class="editor">${headers('Tax schedule input')}<tbody>${Object.entries(
+            HoistTax.fields,
+        )
+            .map(
+                ([k, l]) =>
+                    `<tr><td>${l}</td>${periods()
+                        .map(
+                            (p) =>
+                                `<td>${numberInput(t[p][k], `data-hoist-path="tax.${p}.${k}"`, l + ' ' + p)}</td>`,
+                        )
+                        .join('')}</tr>`,
+            )
+            .join(
+                '',
+            )}</tbody></table></div></section><div class="hint">Map current tax payables / receivables and non-current deferred tax balances to note 17 in Note mapping. Tax expense remains a profit-or-loss category. Taxable income and the effective-tax bridge are separate disclosures; this app does not determine tax eligibility.</div>`
+    );
+}
+function hoistText(label, path, value, hint = '', rows = 5) {
+    return `<label>${esc(label)}<textarea rows="${rows}" data-hoist-path="${path}" placeholder="${esc(hint)}">${esc(value || '')}</textarea></label>`;
+}
+function hoistInput(label, path, value, type = 'text') {
+    return `<label>${esc(label)}<input type="${type === 'date' ? 'text' : type}" ${type === 'date' ? 'data-date-format="dmy" placeholder="DD/MM/YYYY" maxlength="10"' : ''} data-hoist-path="${path}" value="${esc(type === 'date' ? (value ? HoistReport.dt(value) : '') : (value ?? ''))}" ${type === 'number' ? 'step="0.01" min="-1000000000000" max="1000000000000"' : ''}></label>`;
+}
+function templateView() {
+    const t = HM.ensure(state);
+    return (
+        title(
+            'HOISTX 2024 TEMPLATE',
+            'Entity & authorisation',
+            'Complete these fields once. They populate the cover, manager’s report and notes automatically.',
+        ) +
+        `<section class="card"><h2>Reporting entity</h2><div class="form-grid">${[
+            ['Legal form', 'legalForm'],
+            ['Licensing authority', 'issuer'],
+            ['Functional currency', 'functionalCurrency'],
+            ['Authorising body', 'approvalBody'],
+        ]
+            .map(([l, k]) => hoistInput(l, 'info.' + k, t.info[k]))
+            .join(
+                '',
+            )}${hoistInput('Incorporation date', 'info.incorporated', t.info.incorporated, 'date')}${hoistInput('Authorisation date', 'info.approvalDate', t.info.approvalDate, 'date')}</div>${hoistText('Explanation of reporting period (if needed)', 'info.periodExplanation', t.info.periodExplanation, 'Explain an initial or unusually long / short period.', 3)}</section><section class="card"><h2>Manager’s report</h2><p class="muted">If the management report in Company details is blank, the report is assembled from the company’s activity, dates, revenue, profit and signatory. A custom management report takes precedence.</p><h2>Auditor’s report (optional)</h2><p class="muted">Only paste wording supplied by your auditor. It is included verbatim as supplied text; the app does not create an audit opinion or signatures.</p>${hoistText('Auditor-supplied report text', 'auditorText', t.auditorText, 'Leave blank for management-prepared financial statements.', 8)}</section>`
+    );
+}
+function policyView() {
+    const t = HM.ensure(state),
+        keys = HM.applicablePolicies(state);
+    return (
+        title(
+            'ACCOUNTING POLICIES',
+            'Policies for this entity',
+            'Review the prepared wording and replace each [CONFIRM: ...] with your company information. These policies appear in note 3.',
+        ) +
+        `<div class="hint">The Hoistx sample is the layout reference. Its accounting framework, tax position and business facts are not assumed to apply to your company. Use English text for this report.</div>` +
+        keys
+            .map(
+                (k) =>
+                    `<section class="card">${hoistText(HM.policyDefs[k][0], 'policies.' + k, t.policies[k], HM.policyDefs[k][1], 6)}</section>`,
+            )
+            .join('')
+    );
+}
+function disclosureView() {
+    const t = HM.ensure(state);
+    return (
+        title(
+            'NUMBERED DISCLOSURES',
+            'Disclosures & explanations',
+            'Complete each relevant disclosure. State “none” explicitly where that is the reviewed conclusion.',
+        ) +
+        Object.entries(HM.narrativeDefs)
+            .filter(([k]) => k !== 'comparatives' || state.company.comparative)
+            .map(
+                ([k, [label, hint]]) =>
+                    `<section class="card">${hoistText(label, 'narrative.' + k, t.narrative[k], hint, 6)}</section>`,
+            )
+            .join('') +
+        Object.entries(HoistDisclosureDrafts.riskDefs)
+            .map(
+                ([k, [label]]) =>
+                    `<section class="card">${hoistText('15. ' + label, 'risks.' + k, t.risks[k], '', 6)}</section>`,
+            )
+            .join('') +
+        `<section class="card"><h2>Additional wording for financial notes</h2><p class="muted">The figures and comparative movements are automatic. Add reasons, restrictions and other disclosures below. Do not describe increases as purchases or cash flows unless the supporting information establishes that.</p>${Object.entries(
+            HM.defs,
+        )
+            .filter(([n]) => HM.rows(state, n).some((r) => r.current || r.prior))
+            .map(([n, [name]]) =>
+                hoistText(
+                    n + '. ' + name,
+                    'explanations.' + n,
+                    t.explanations?.[n] || '',
+                    'Optional additional disclosure or explanation.',
+                    3,
+                ),
+            )
+            .join('')}</section>`
+    );
+}
+function mappingView() {
+    const t = HM.ensure(state);
+    return (
+        title(
+            'STATEMENT CLASSIFICATION',
+            'Note mapping',
+            'Review which Hoistx note each financial line belongs to. Mapping also controls statement subtotals.',
+        ) +
+        `<div class="hint">Notes 1–19 follow Hoistx’s sequence. Notes 20–27 cover additional categories when your figures require them. Trial balance import proposes categories; confirm this mapping after an import.</div><section class="card table-card"><div class="table-scroll"><table class="tb-table"><thead><tr><th>Account</th><th>Statement category</th><th>Report note</th></tr></thead><tbody>${state.rows.map((r) => `<tr><td>${esc(r.label)}</td><td>${esc(E.groups[r.group])}</td><td><select data-hoist-map="${esc(r.id)}" aria-label="Note for ${esc(r.label)}">${(r.group === 'tax' ? [[17, ['Corporate income tax']]] : Object.entries(HM.defs).filter(([n, d]) => d[1].includes(r.group))).map(([n, d]) => `<option value="${n}" ${HM.suggest(r) === Number(n) ? 'selected' : ''}>${n}. ${esc(d[0])}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div></section><button class="primary" data-hoist-action="mapping">Confirm account mapping</button><p class="muted">${t.mappingReviewed === HM.mappingStamp(state) ? 'Mapping confirmed.' : 'Mapping needs review.'}</p>`
+    );
+}
+function scheduleCells(key, row, index, fields) {
+    return Object.entries(fields)
+        .map(
+            ([field, label]) =>
+                `<tr><td>${esc(label)}</td>${periods()
+                    .map(
+                        (p) =>
+                            `<td>${numberInput(row[p][field], `data-hoist-path="${key}.${index}.${p}.${field}"`, label + ' ' + p)}</td>`,
+                    )
+                    .join('')}</tr>`,
+        )
+        .join('');
+}
+function supportView() {
+    const t = HM.ensure(state);
+    return (
+        title(
+            'SUPPORTING SCHEDULES',
+            'Assets, obligations & ownership',
+            'Schedules reconcile to the mapped statement balances. Enter positive disposals and payments; the app deducts them.',
+        ) +
+        `<section class="card"><h2>5. Property, plant and equipment</h2>${t.ppe
+            .map(
+                (r, i) =>
+                    `<div class="support-item"><div class="form-grid">${hoistInput('Asset class', 'ppe.' + i + '.label', r.label)}<button data-hoist-remove="ppe.${i}">Remove asset class</button></div><div class="table-scroll"><table class="editor">${headers('Cost and accumulated depreciation')}<tbody>${scheduleCells('ppe', r, i, HM.ppeFields)}<tr class="total"><td>Closing net book value</td>${periods()
+                        .map((p) => `<td class="numeric">${money(HM.ppeClose(r, p).net)}</td>`)
+                        .join('')}</tr></tbody></table></div></div>`,
+            )
+            .join(
+                '',
+            )}<button data-hoist-add="ppe">＋ Add asset class</button></section><section class="card"><h2>10. Employee end of service benefits</h2><div class="table-scroll"><table class="editor">${headers('Movement')}<tbody>${Object.entries(
+            HM.eosFields,
+        )
+            .map(
+                ([k, label]) =>
+                    `<tr><td>${label}</td>${periods()
+                        .map(
+                            (p) =>
+                                `<td>${numberInput(t.eos[p][k], `data-hoist-path="eos.${p}.${k}"`, label + ' ' + p)}</td>`,
+                        )
+                        .join('')}</tr>`,
+            )
+            .join('')}<tr class="total"><td>Closing provision</td>${periods()
+            .map((p) => `<td class="numeric">${money(HM.eosClose(t, p))}</td>`)
+            .join(
+                '',
+            )}</tr></tbody></table></div></section><section class="card"><h2>8. Related-party balances and transactions</h2>${t.related
+            .map(
+                (r, i) =>
+                    `<div class="support-item"><div class="form-grid">${hoistInput('Counterparty', 'related.' + i + '.name', r.name)}${hoistInput('Relationship', 'related.' + i + '.relationship', r.relationship)}<label>Classification<select data-hoist-path="related.${i}.kind">${Object.entries(
+                        {
+                            asset: 'Due from - asset',
+                            liability: 'Due to - liability',
+                            equity: 'Shareholders’ equity account',
+                            transaction: 'Transaction during the period',
+                        },
+                    )
+                        .map(
+                            ([k, l]) =>
+                                `<option value="${k}" ${r.kind === k ? 'selected' : ''}>${l}</option>`,
+                        )
+                        .join('')}</select></label>${periods()
+                        .map((p) =>
+                            hoistInput(periodLabel(p), 'related.' + i + '.' + p, r[p], 'number'),
+                        )
+                        .join(
+                            '',
+                        )}</div>${hoistText('Terms, interest, security and repayment', 'related.' + i + '.terms', r.terms, 'Describe the actual terms.', 3)}<button data-hoist-remove="related.${i}">Remove counterparty</button></div>`,
+            )
+            .join(
+                '',
+            )}<button data-hoist-add="related">＋ Add counterparty / transaction</button></section><section class="card"><h2>11. Shareholders</h2>${t.shares
+            .map(
+                (r, i) =>
+                    `<div class="support-item"><div class="form-grid">${hoistInput('Shareholder', 'shares.' + i + '.name', r.name)}${hoistInput('Nationality', 'shares.' + i + '.nationality', r.nationality)}${hoistInput('Nominal value per share', 'shares.' + i + '.par', r.par, 'number')}${periods()
+                        .map((p) =>
+                            hoistInput(
+                                'Shares at ' + periodLabel(p),
+                                'shares.' + i + '.' + p,
+                                r[p],
+                                'number',
+                            ),
+                        )
+                        .join(
+                            '',
+                        )}</div><button data-hoist-remove="shares.${i}">Remove shareholder</button></div>`,
+            )
+            .join(
+                '',
+            )}<button data-hoist-add="shares">＋ Add shareholder</button></section><div class="hint">Receivables, payables, cash and expense schedules are generated from the mapped financial lines. Add or split lines in Financial figures where a more detailed breakdown is needed.</div>`
+    );
+}
+function cashDetailView() {
+    const t = HM.ensure(state);
+    return (
+        title(
+            'CASH-FLOW SUPPORT',
+            'Cash-flow details',
+            'Explain the amounts entered in the cash-flow schedule. Positive amounts are inflows or add-backs; negative amounts are outflows or deductions.',
+        ) +
+        `<section class="card"><p class="muted">Profit is linked automatically. Enter actual cash movements and non-cash adjustments. Do not infer additions or repayments solely from closing balances.</p><button data-hoist-action="seedcash">Create rows from existing cash-flow totals</button><p class="muted">This adds one row for each missing non-zero category. Replace the generic description with the actual movements as needed.</p>${t.cashDetails
+            .map(
+                (r, i) =>
+                    `<div class="support-item"><div class="form-grid">${hoistInput('Movement description', 'cashDetails.' + i + '.label', r.label)}<label>Category<select data-hoist-path="cashDetails.${i}.kind">${Object.entries(
+                        E.cashFields,
+                    )
+                        .filter(([k]) => k !== 'opening')
+                        .map(
+                            ([k, l]) =>
+                                `<option value="${k}" ${r.kind === k ? 'selected' : ''}>${l}</option>`,
+                        )
+                        .join('')}</select></label>${periods()
+                        .map((p) =>
+                            hoistInput(
+                                periodLabel(p),
+                                'cashDetails.' + i + '.' + p,
+                                r[p],
+                                'number',
+                            ),
+                        )
+                        .join(
+                            '',
+                        )}</div><button data-hoist-remove="cashDetails.${i}">Remove movement</button></div>`,
+            )
+            .join('')}<button data-hoist-add="cashDetails">＋ Add movement</button></section>`
+    );
+}
+function readinessCategory(c) {
+    if (['Final input review', 'Statement note mapping'].includes(c.title)) return 'review';
+    if (
+        /reconciliation|continuity|^Financial position |^Cash-flow detail:|^Related-party (asset|liability|equity) balances |^Current \/ deferred tax expense |^Current tax payable |^Deferred tax (asset|liability|through profit)/i.test(
+            c.title,
+        )
+    )
+        return 'reconcile';
+    return 'information';
+}
+function readinessSummary(list) {
+    const pending = list.filter((c) => !c.ok);
+    if (!pending.length) return 'Report ready';
+    const n = { information: 0, reconcile: 0, review: 0 };
+    pending.forEach((c) => n[readinessCategory(c)]++);
+    return [
+        n.information ? `${n.information} information items to complete` : '',
+        n.reconcile ? `${n.reconcile} reconciliation issues` : '',
+        n.review ? `${n.review} reviews pending` : '',
+    ]
+        .filter(Boolean)
+        .join(' · ');
+}
+function preparationIdentity() {
+    return (
+        (state.company.name || 'Untitled company') +
+        ' · ' +
+        (state.company.start ? date(state.company.start) : 'Start date not set') +
+        ' – ' +
+        (state.company.end ? date(state.company.end) : 'End date not set')
+    );
+}
+function readinessView() {
+    const list = HM.checks(state),
+        pending = list.filter((x) => !x.ok);
+    const card = (c) =>
+        `<section class="check ${c.ok ? 'pass' : 'fail'}"><span>${c.ok ? '✓' : readinessCategory(c) === 'reconcile' ? '!' : '○'}</span><div><h3>${esc(c.title.replace(/\d{4}-\d{2}-\d{2}/g, date))}</h3><p>${esc(c.detail)}</p></div>${!c.ok && c.tab !== 'readiness' ? `<button data-tab="${c.tab}">${readinessCategory(c) === 'reconcile' ? 'Check figures' : 'Complete'}</button>` : ''}</section>`;
+    return (
+        title('PREPARATION STATUS', 'Report readiness', readinessSummary(list)) +
+        `<section class="card"><h2>${esc(preparationIdentity())}</h2><p>Complete the information, reconcile the figures, then confirm the final review to prepare your report.</p><button class="primary" data-hoist-action="review">Confirm final input review</button><button data-tab="report">View report</button><p id="hoist-pdf-status" role="status">${hoistPdfError ? esc(hoistPdfError) : hoistPdfUrl ? 'PDF is ready.' : pending.length ? 'Preparation in progress.' : 'Preparing PDF…'}</p></section>` +
+        [
+            [
+                'information',
+                'Information to complete',
+                'Missing details, disclosures and inputs needing confirmation.',
+            ],
+            [
+                'reconcile',
+                'Reconciliation issues',
+                'Balances or supporting schedules that do not agree.',
+            ],
+            ['review', 'Reviews pending', 'Confirm the account mapping and final inputs.'],
+        ]
+            .map(([key, label, description]) => {
+                const items = pending.filter((c) => readinessCategory(c) === key);
+                return `<section class="readiness-group"><h2>${label} <small>(${items.length})</small></h2><p class="muted">${description}</p>${items.length ? '<div class="checks">' + items.map(card).join('') + '</div>' : '<p>No outstanding items.</p>'}</section>`;
+            })
+            .join('') +
+        `<details><summary>Completed checks (${list.length - pending.length})</summary><div class="checks">${list
+            .filter((c) => c.ok)
+            .map(card)
+            .join('')}</div></details>`
+    );
+}
 
-function hoistReportHtml(){const r=HoistReport.build(state);return `<article class="paper hoist-paper cover"><div class="cover-title"><h1>${esc(r.company)}</h1><h2>Annual report and financial statements</h2><p>${esc(r.period)}</p><p>Presented in ${esc(r.currency)}</p></div><p>${r.ready?'Management-prepared · Unaudited':'INCOMPLETE DRAFT · UNAUDITED'}${r.illustrative?' · ILLUSTRATIVE DATA':''}</p></article>`+r.sections.map(sec=>`<article class="paper hoist-paper"><div class="paper-head"><b>${esc(r.company)}</b><span>${r.ready?'UNAUDITED':'INCOMPLETE DRAFT'}</span></div><h2>${esc(sec.title)}</h2><p>${esc(r.period)}</p>${sec.blocks.map(b=>b.type==='h'?`<h3>${esc(b.text)}</h3>`:b.type==='p'?`<div class="prose">${esc(b.text)}</div>`:`<div class="table-scroll"><table class="financial"><thead><tr>${b.headers.map(h=>`<th>${esc(h).replace(/\n/g,'<br>')}</th>`).join('')}</tr></thead><tbody>${b.rows.map(row=>`<tr class="${row.total?'total':row.heading?'report-group':''}">${row.cells.map((v,i)=>`<td class="${i?'numeric':''}">${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`).join('')}</article>`).join('');}
-function hoistReportView(){const ready=HM.checks(state).every(c=>c.ok);return title('HOISTX REPORT PACK','Automatically assembled report',ready?'Your completed inputs have been assembled into the report.':'This is a live draft. Complete Report readiness before issuing it.',`<button class="primary" data-hoist-action="pdf">${ready?'Download report PDF':'Download incomplete draft PDF'}</button>`)+`<div class="hint">The PDF includes exact pagination, contents page references and continuing-page headers. This HTML view shows the content before pagination.</div><div class="report-stack">${hoistReportHtml()}</div>`;}
-async function hoistGeneratePdf(download=false){const generation=++hoistPdfGeneration;try{const bytes=await HoistPDF.create(state);if(generation!==hoistPdfGeneration)return;if(hoistPdfUrl)URL.revokeObjectURL(hoistPdfUrl);hoistPdfUrl=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));hoistPdfError='';const status=document.querySelector('#hoist-pdf-status');if(status)status.textContent='PDF generated automatically and ready to download.';if(download){const a=document.createElement('a');a.href=hoistPdfUrl;a.download=(state.company.name||'Financial-statements').replace(/[^a-z0-9 -]/gi,'')+'-'+state.company.end+'.pdf';a.click();}}catch(err){hoistPdfError='PDF could not be generated: '+err.message;toast(hoistPdfError);const status=document.querySelector('#hoist-pdf-status');if(status)status.textContent=hoistPdfError;}}
-function hoistChanged(){clearTimeout(hoistPdfTimer);hoistPdfGeneration++;if(hoistPdfUrl){URL.revokeObjectURL(hoistPdfUrl);hoistPdfUrl='';}hoistPdfError='';const list=HM.checks(state),pending=list.filter(x=>!x.ok);const el=document.querySelector('#hoist-ready-count');if(el)el.textContent=readinessSummary(list);const identity=document.querySelector('#preparation-identity');if(identity)identity.textContent=preparationIdentity();if(!pending.length)hoistPdfTimer=setTimeout(()=>hoistGeneratePdf(),400);}
-function hoistSet(path,value){const parts=path.split('.');if(parts.some(k=>['__proto__','prototype','constructor'].includes(k)))throw Error('Invalid field.');let o=HM.ensure(state);for(const k of parts.slice(0,-1)){if(o[k]===undefined)o[k]={};o=o[k];}o[parts.at(-1)]=value;}
-document.addEventListener('input',e=>{const t=e.target;if(!t.dataset.hoistPath)return;if(t.dataset.dateFormat)return;if(t.type==='number'||t.type==='date'||t.tagName==='SELECT')return;hoistSet(t.dataset.hoistPath,t.value);save();});
-document.addEventListener('change',e=>{const t=e.target;if(t.dataset.hoistPath){if(t.dataset.dateFormat){saveDateField(t);return;}if(t.type==='number'&&(!t.validity.valid||t.value==='')){toast('Enter a valid amount, using up to two decimal places.');render();return;}hoistSet(t.dataset.hoistPath,t.type==='number'?Number(t.value):t.value);save();if(t.type==='number')render();}if(t.dataset.hoistMap){state.rows.find(r=>r.id===t.dataset.hoistMap).hoistNote=Number(t.value);save();}});
-document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const t=HM.ensure(state);if(b.dataset.hoistAdd){const key=b.dataset.hoistAdd,base={id:crypto.randomUUID()};if(t[key].length>=(key==='ppe'?30:100)){toast('Schedule row limit reached.');return;}if(key==='ppe'){const values=()=>Object.fromEntries(Object.keys(HM.ppeFields).map(k=>[k,0]));t.ppe.push({...base,label:'New asset class',current:values(),prior:values()});}else if(key==='related')t.related.push({...base,name:'',relationship:'',terms:'',kind:'liability',current:0,prior:0});else if(key==='shares')t.shares.push({...base,name:'',nationality:'',par:1,current:0,prior:0});else t.cashDetails.push({...base,label:'',kind:'working',current:0,prior:0});save();render();return;}if(b.dataset.hoistRemove){if(!confirm('Remove this schedule row?'))return;const [key,index]=b.dataset.hoistRemove.split('.');t[key].splice(Number(index),1);save();render();return;}switch(b.dataset.hoistAction){case'mapping':t.mappingReviewed=HM.mappingStamp(state);save();render();break;case'review':{const missing=HM.checks(state).filter(c=>!c.ok&&c.title!=='Final input review');if(missing.length){toast(`Complete the other ${missing.length} requirements first.`);return;}t.reviewed=HM.stamp(state);save();render();toast('Inputs complete. Your report is being generated automatically.');break;}case'seedcash':for(const k of Object.keys(E.cashFields).filter(k=>k!=='opening'))if(!t.cashDetails.some(r=>r.kind===k)&&periods().some(p=>state.cash[p][k]!==0))t.cashDetails.push({id:crypto.randomUUID(),kind:k,label:E.cashFields[k],current:state.cash.current[k],prior:state.cash.prior[k]});save();render();break;case'pdf':hoistGeneratePdf(true);break;}});
+function hoistReportHtml() {
+    const r = HoistReport.build(state);
+    return (
+        `<article class="paper hoist-paper cover"><div class="cover-title"><h1>${esc(r.company)}</h1><h2>Annual report and financial statements</h2><p>${esc(r.period)}</p><p>Presented in ${esc(r.currency)}</p></div><p>${r.ready ? 'Management-prepared · Unaudited' : 'INCOMPLETE DRAFT · UNAUDITED'}${r.illustrative ? ' · ILLUSTRATIVE DATA' : ''}</p></article>` +
+        r.sections
+            .map(
+                (sec) =>
+                    `<article class="paper hoist-paper"><div class="paper-head"><b>${esc(r.company)}</b><span>${r.ready ? 'UNAUDITED' : 'INCOMPLETE DRAFT'}</span></div><h2>${esc(sec.title)}</h2><p>${esc(r.period)}</p>${sec.blocks.map((b) => (b.type === 'h' ? `<h3>${esc(b.text)}</h3>` : b.type === 'p' ? `<div class="prose">${esc(b.text)}</div>` : `<div class="table-scroll"><table class="financial"><thead><tr>${b.headers.map((h) => `<th>${esc(h).replace(/\n/g, '<br>')}</th>`).join('')}</tr></thead><tbody>${b.rows.map((row) => `<tr class="${row.total ? 'total' : row.heading ? 'report-group' : ''}">${row.cells.map((v, i) => `<td class="${i ? 'numeric' : ''}">${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`)).join('')}</article>`,
+            )
+            .join('')
+    );
+}
+function hoistReportView() {
+    const ready = HM.checks(state).every((c) => c.ok);
+    return (
+        title(
+            'HOISTX REPORT PACK',
+            'Automatically assembled report',
+            ready
+                ? 'Your completed inputs have been assembled into the report.'
+                : 'This is a live draft. Complete Report readiness before issuing it.',
+            `<button class="primary" data-hoist-action="pdf">${ready ? 'Download report PDF' : 'Download incomplete draft PDF'}</button>`,
+        ) +
+        `<div class="hint">The PDF includes exact pagination, contents page references and continuing-page headers. This HTML view shows the content before pagination.</div><div class="report-stack">${hoistReportHtml()}</div>`
+    );
+}
+async function hoistGeneratePdf(download = false) {
+    const generation = ++hoistPdfGeneration;
+    try {
+        const bytes = await HoistPDF.create(state);
+        if (generation !== hoistPdfGeneration) return;
+        if (hoistPdfUrl) URL.revokeObjectURL(hoistPdfUrl);
+        hoistPdfUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+        hoistPdfError = '';
+        const status = document.querySelector('#hoist-pdf-status');
+        if (status) status.textContent = 'PDF generated automatically and ready to download.';
+        if (download) {
+            const a = document.createElement('a');
+            a.href = hoistPdfUrl;
+            a.download =
+                (state.company.name || 'Financial-statements').replace(/[^a-z0-9 -]/gi, '') +
+                '-' +
+                state.company.end +
+                '.pdf';
+            a.click();
+        }
+    } catch (err) {
+        hoistPdfError = 'PDF could not be generated: ' + err.message;
+        toast(hoistPdfError);
+        const status = document.querySelector('#hoist-pdf-status');
+        if (status) status.textContent = hoistPdfError;
+    }
+}
+function hoistChanged() {
+    clearTimeout(hoistPdfTimer);
+    hoistPdfGeneration++;
+    if (hoistPdfUrl) {
+        URL.revokeObjectURL(hoistPdfUrl);
+        hoistPdfUrl = '';
+    }
+    hoistPdfError = '';
+    const list = HM.checks(state),
+        pending = list.filter((x) => !x.ok);
+    const el = document.querySelector('#hoist-ready-count');
+    if (el) el.textContent = readinessSummary(list);
+    const identity = document.querySelector('#preparation-identity');
+    if (identity) identity.textContent = preparationIdentity();
+    if (!pending.length) hoistPdfTimer = setTimeout(() => hoistGeneratePdf(), 400);
+}
+function hoistSet(path, value) {
+    const parts = path.split('.');
+    if (parts.some((k) => ['__proto__', 'prototype', 'constructor'].includes(k)))
+        throw Error('Invalid field.');
+    let o = HM.ensure(state);
+    for (const k of parts.slice(0, -1)) {
+        if (o[k] === undefined) o[k] = {};
+        o = o[k];
+    }
+    o[parts.at(-1)] = value;
+}
+document.addEventListener('input', (e) => {
+    const t = e.target;
+    if (!t.dataset.hoistPath) return;
+    if (t.dataset.dateFormat) return;
+    if (t.type === 'number' || t.type === 'date' || t.tagName === 'SELECT') return;
+    hoistSet(t.dataset.hoistPath, t.value);
+    save();
+});
+document.addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.dataset.hoistPath) {
+        if (t.dataset.dateFormat) {
+            saveDateField(t);
+            return;
+        }
+        if (t.type === 'number' && (!t.validity.valid || t.value === '')) {
+            toast('Enter a valid amount, using up to two decimal places.');
+            render();
+            return;
+        }
+        hoistSet(t.dataset.hoistPath, t.type === 'number' ? Number(t.value) : t.value);
+        save();
+        if (t.type === 'number') render();
+    }
+    if (t.dataset.hoistMap) {
+        state.rows.find((r) => r.id === t.dataset.hoistMap).hoistNote = Number(t.value);
+        save();
+    }
+});
+document.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const t = HM.ensure(state);
+    if (b.dataset.hoistAdd) {
+        const key = b.dataset.hoistAdd,
+            base = { id: crypto.randomUUID() };
+        if (t[key].length >= (key === 'ppe' ? 30 : 100)) {
+            toast('Schedule row limit reached.');
+            return;
+        }
+        if (key === 'ppe') {
+            const values = () => Object.fromEntries(Object.keys(HM.ppeFields).map((k) => [k, 0]));
+            t.ppe.push({ ...base, label: 'New asset class', current: values(), prior: values() });
+        } else if (key === 'related')
+            t.related.push({
+                ...base,
+                name: '',
+                relationship: '',
+                terms: '',
+                kind: 'liability',
+                current: 0,
+                prior: 0,
+            });
+        else if (key === 'shares')
+            t.shares.push({ ...base, name: '', nationality: '', par: 1, current: 0, prior: 0 });
+        else t.cashDetails.push({ ...base, label: '', kind: 'working', current: 0, prior: 0 });
+        save();
+        render();
+        return;
+    }
+    if (b.dataset.hoistRemove) {
+        if (!confirm('Remove this schedule row?')) return;
+        const [key, index] = b.dataset.hoistRemove.split('.');
+        t[key].splice(Number(index), 1);
+        save();
+        render();
+        return;
+    }
+    switch (b.dataset.hoistAction) {
+        case 'mapping':
+            t.mappingReviewed = HM.mappingStamp(state);
+            save();
+            render();
+            break;
+        case 'review': {
+            const missing = HM.checks(state).filter(
+                (c) => !c.ok && c.title !== 'Final input review',
+            );
+            if (missing.length) {
+                toast(`Complete the other ${missing.length} requirements first.`);
+                return;
+            }
+            t.reviewed = HM.stamp(state);
+            save();
+            render();
+            toast('Inputs complete. Your report is being generated automatically.');
+            break;
+        }
+        case 'seedcash':
+            for (const k of Object.keys(E.cashFields).filter((k) => k !== 'opening'))
+                if (
+                    !t.cashDetails.some((r) => r.kind === k) &&
+                    periods().some((p) => state.cash[p][k] !== 0)
+                )
+                    t.cashDetails.push({
+                        id: crypto.randomUUID(),
+                        kind: k,
+                        label: E.cashFields[k],
+                        current: state.cash.current[k],
+                        prior: state.cash.prior[k],
+                    });
+            save();
+            render();
+            break;
+        case 'pdf':
+            hoistGeneratePdf(true);
+            break;
+    }
+});
 
-function saveDateField(t){const m=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t.value),iso=m?m[3]+'-'+m[2]+'-'+m[1]:'';const valid=!!iso&&!Number.isNaN(Date.parse(iso))&&new Date(iso).toISOString().slice(0,10)===iso;t.setCustomValidity(valid||!t.value?'':'Enter a valid date as DD/MM/YYYY.');const value=valid?iso:'';if(t.dataset.company)state.company[t.dataset.company]=value;else hoistSet(t.dataset.hoistPath,value);save();return valid||!t.value;}
+function saveDateField(t) {
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t.value),
+        iso = m ? m[3] + '-' + m[2] + '-' + m[1] : '';
+    const valid =
+        !!iso && !Number.isNaN(Date.parse(iso)) && new Date(iso).toISOString().slice(0, 10) === iso;
+    t.setCustomValidity(valid || !t.value ? '' : 'Enter a valid date as DD/MM/YYYY.');
+    const value = valid ? iso : '';
+    if (t.dataset.company) state.company[t.dataset.company] = value;
+    else hoistSet(t.dataset.hoistPath, value);
+    save();
+    return valid || !t.value;
+}

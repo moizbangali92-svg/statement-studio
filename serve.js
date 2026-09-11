@@ -56,17 +56,21 @@ function resolveSafe(pathname) {
 async function listing(dir, pathname) {
     const names = await fsp.readdir(dir, { withFileTypes: true });
     const rows = names
-        .filter(d => !d.name.startsWith('.') && d.name !== 'node_modules')
-        .sort((a, b) => (b.isDirectory() - a.isDirectory()) || a.name.localeCompare(b.name))
-        .map(d => {
-            const href = path.posix.join(pathname, encodeURIComponent(d.name)) + (d.isDirectory() ? '/' : '');
+        .filter((d) => !d.name.startsWith('.') && d.name !== 'node_modules')
+        .sort((a, b) => b.isDirectory() - a.isDirectory() || a.name.localeCompare(b.name))
+        .map((d) => {
+            const href =
+                path.posix.join(pathname, encodeURIComponent(d.name)) +
+                (d.isDirectory() ? '/' : '');
             return `<li><a href="${href}">${d.name}${d.isDirectory() ? '/' : ''}</a></li>`;
         })
         .join('');
-    return `<!doctype html><meta charset="utf-8"><title>${pathname}</title>`
-        + `<style>body{font:14px system-ui;margin:2rem;max-width:48rem}`
-        + `li{margin:.25rem 0}a{color:#17698c}</style>`
-        + `<h1>${pathname}</h1><ul>${rows}</ul>`;
+    return (
+        `<!doctype html><meta charset="utf-8"><title>${pathname}</title>` +
+        `<style>body{font:14px system-ui;margin:2rem;max-width:48rem}` +
+        `li{margin:.25rem 0}a{color:#17698c}</style>` +
+        `<h1>${pathname}</h1><ul>${rows}</ul>`
+    );
 }
 
 const server = http.createServer(async (req, res) => {
@@ -83,9 +87,14 @@ const server = http.createServer(async (req, res) => {
 
         if (stat.isDirectory()) {
             const index = path.join(target, 'index.html');
-            if (fs.existsSync(index)) { file = index; stat = await fsp.stat(file); }
-            else {
-                const body = await listing(target, pathname.endsWith('/') ? pathname : pathname + '/');
+            if (fs.existsSync(index)) {
+                file = index;
+                stat = await fsp.stat(file);
+            } else {
+                const body = await listing(
+                    target,
+                    pathname.endsWith('/') ? pathname : pathname + '/',
+                );
                 res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
                 return res.end(body);
             }
@@ -116,7 +125,7 @@ server.listen(PORT, '127.0.0.1', () => {
     console.log(`\n  Bound to 127.0.0.1 only. Ctrl+C to stop.\n`);
 });
 
-server.on('error', err => {
+server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
         console.error(`  port ${PORT} is already in use - try: node serve.js ${PORT + 1}`);
         process.exit(1);

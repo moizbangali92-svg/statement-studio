@@ -48,7 +48,7 @@ function assertInlineable(rel, text) {
 function jsonForScriptElement(value) {
     return JSON.stringify(value).replace(
         /[^\x20-\x7E]|</g,
-        ch => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0')
+        (ch) => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'),
     );
 }
 
@@ -70,8 +70,9 @@ function build() {
     const imp = workerSrc.match(importLine);
     if (!imp) throw new Error(`build: expected an importScripts() call in ${WORKER}`);
     const xlsxSrc = readText(imp[2]);
-    const workerPayload = workerSrc.replace(importLine, '') // drop the import
-        .replace(/^'use strict';\n/, m => m + xlsxSrc);
+    const workerPayload = workerSrc
+        .replace(importLine, '') // drop the import
+        .replace(/^'use strict';\n/, (m) => m + xlsxSrc);
     assertInlineable(WORKER, workerPayload);
 
     // ---- scripts -------------------------------------------------------
@@ -103,20 +104,29 @@ function build() {
     // ---- checks --------------------------------------------------------
     const opens = (html.match(/<script/g) || []).length;
     const closes = (html.match(/<\/script>/g) || []).length;
-    if (opens !== closes) throw new Error(`build: unbalanced script tags (${opens} open, ${closes} close)`);
-    if (opens !== inlined.length + 1) throw new Error(`build: expected ${inlined.length + 1} script blocks, produced ${opens}`);
+    if (opens !== closes)
+        throw new Error(`build: unbalanced script tags (${opens} open, ${closes} close)`);
+    if (opens !== inlined.length + 1)
+        throw new Error(`build: expected ${inlined.length + 1} script blocks, produced ${opens}`);
     if (/<script src=/.test(html)) throw new Error('build: a <script src> survived inlining');
-    if (/<link\s+rel="stylesheet"/i.test(html)) throw new Error('build: a stylesheet link survived inlining');
+    if (/<link\s+rel="stylesheet"/i.test(html))
+        throw new Error('build: a stylesheet link survived inlining');
 
     fs.writeFileSync(OUT, html, 'utf8');
-    return { bytes: Buffer.byteLength(html, 'utf8'), scripts: inlined, worker: workerPayload.length };
+    return {
+        bytes: Buffer.byteLength(html, 'utf8'),
+        scripts: inlined,
+        worker: workerPayload.length,
+    };
 }
 
 try {
     const r = build();
     const mb = (r.bytes / 1024 / 1024).toFixed(2);
     console.log(`  built  Statement Studio.html  ${r.bytes.toLocaleString()} bytes (${mb} MB)`);
-    console.log(`         ${r.scripts.length} scripts inlined, worker payload ${r.worker.toLocaleString()} chars`);
+    console.log(
+        `         ${r.scripts.length} scripts inlined, worker payload ${r.worker.toLocaleString()} chars`,
+    );
     console.log(`         ${r.scripts.join(', ')}`);
 } catch (err) {
     console.error(`  ${err.message}`);

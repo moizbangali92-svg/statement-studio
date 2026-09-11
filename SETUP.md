@@ -18,6 +18,33 @@ the CRLF -> LF normalisation it applies to every other source, so that file is
 pinned to CRLF on checkout. Remove that rule and the bundle's bytes start
 depending on which machine built it.
 
+## Formatting
+
+    npm run format          # prettier --write .
+    npm run format:check    # fails if anything is unformatted
+
+`Source/` was hand-minified when it came over from the Hoistx builder - app.js
+was 31 KB on 75 lines, hoist-ui.js 20 KB on 28. It is now formatted with
+prettier (config in `.prettierrc`). Keep it that way; run the formatter before
+committing.
+
+`.prettierignore` exists for a reason. Do not format:
+
+- `Statement Studio.html` - generated, overwritten by every build.
+- `Source/vendor/` - third-party, shipped minified.
+- `Source/report-fonts.js` - 4 MB of base64 font data, not code.
+- `Source/index.html` - `build.js` matches its `<script src>` and
+  `<link rel="stylesheet">` tags with regexes that assume one tag per line.
+  Reformatting it breaks the build.
+
+The reformat was verified three ways, and the same checks apply to any future
+one: every file's AST (parsed with acorn, positions stripped) is byte-identical
+before and after; the 13 storage tests pass; and a Chromium harness comparing
+36 behavioural fingerprints - the computed statement model, readiness checks,
+the trial-balance parser, the rendered DOM of all 12 tabs, and the generated
+PDF - matched on 35. The 36th is the PDF's own bytes, which differ run to run
+on an identical build; its length was unchanged at 80,664.
+
 ## Tests
 
     node test-import.js

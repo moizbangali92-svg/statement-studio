@@ -61,7 +61,14 @@ async function listCompanies() {
         } catch (err) {
             // A company that fails to parse must still be listed, so the UI
             // can offer delete / export instead of a dead entry.
-            out.push({ id, name: id, bytes: 0, modified: 0, corrupt: true, error: String(err.message) });
+            out.push({
+                id,
+                name: id,
+                bytes: 0,
+                modified: 0,
+                corrupt: true,
+                error: String(err.message),
+            });
         }
     }
     return out.sort((a, b) => b.modified - a.modified);
@@ -72,7 +79,7 @@ async function readCompany(id) {
     try {
         return await fsp.readFile(fileFor(id), 'utf8');
     } catch (err) {
-        if (err.code === 'ENOENT') return null;   // absent is not corrupt
+        if (err.code === 'ENOENT') return null; // absent is not corrupt
         throw err;
     }
 }
@@ -123,7 +130,7 @@ async function deleteCompany(id) {
         if (err.code !== 'ENOENT') throw err;
     }
     await fsp.rm(src, { force: true });
-    await fsp.rm(undoFileFor(id), { force: true });   // no orphaned restore points
+    await fsp.rm(undoFileFor(id), { force: true }); // no orphaned restore points
     return true;
 }
 
@@ -148,16 +155,17 @@ async function snapshotAll() {
     }
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const dest = path.join(backupDir(), `snapshot-${stamp}.json`);
-    await writeAtomic(dest, JSON.stringify({ version: 1, created: Date.now(), companies: bundle }, null, 2));
+    await writeAtomic(
+        dest,
+        JSON.stringify({ version: 1, created: Date.now(), companies: bundle }, null, 2),
+    );
     await pruneSnapshots();
     return dest;
 }
 
 // Keep the 30 most recent snapshots.
 async function pruneSnapshots() {
-    const files = (await fsp.readdir(backupDir()))
-        .filter((n) => n.startsWith('snapshot-'))
-        .sort();
+    const files = (await fsp.readdir(backupDir())).filter((n) => n.startsWith('snapshot-')).sort();
     for (const name of files.slice(0, Math.max(0, files.length - 30))) {
         await fsp.rm(path.join(backupDir(), name), { force: true });
     }
@@ -264,5 +272,7 @@ app.on('window-all-closed', () => {
 
 // One snapshot per launch, once the app has settled.
 app.on('ready', () => {
-    setTimeout(() => { snapshotAll().catch(() => {}); }, 5000);
+    setTimeout(() => {
+        snapshotAll().catch(() => {});
+    }, 5000);
 });

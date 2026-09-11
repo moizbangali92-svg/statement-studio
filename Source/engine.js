@@ -1,13 +1,252 @@
-(function(root){
-'use strict';
-const groups={revenue:'Revenue',cost:'Cost of sales',otherIncome:'Other income',expense:'Operating expenses',finance:'Finance costs',tax:'Income tax expense',oci:'Other comprehensive income',noncurrentAsset:'Non-current assets',currentAsset:'Current assets (excluding cash)',cash:'Cash and cash equivalents',noncurrentLiability:'Non-current liabilities',currentLiability:'Current liabilities',capital:'Share capital',reserve:'Reserves',retained:'Retained earnings / accumulated losses',owner:'Shareholders’ current account'};
-const cashFields={opening:'Opening cash and cash equivalents',noncash:'Depreciation and other non-cash adjustments',working:'Working capital movements',operatingOther:'Other operating adjustments / payments',investing:'Net investing cash flows',financing:'Net financing cash flows',fx:'Exchange effect on cash'};
-const eqFields={openCapital:'Opening share capital',openReserve:'Opening reserves',openRetained:'Opening retained earnings',openOwner:'Opening shareholders’ account',capitalMovement:'Capital introduced / (repaid)',reserveTransfer:'Transfer from retained earnings to reserves',dividends:'Dividends (enter positive)',ownerMovement:'Shareholders’ account movement',otherRetained:'Other retained earnings adjustments'};
-const cents=n=>Math.round(Number(n)*100); const add=arr=>arr.reduce((a,b)=>a+cents(b),0)/100;
-function calc(s,p){const sum=k=>add(s.rows.filter(r=>r.group===k).map(r=>r[p])); const profit=add([sum('revenue'),-sum('cost'),sum('otherIncome'),-sum('expense'),-sum('finance'),-sum('tax')]);const assets=add([sum('noncurrentAsset'),sum('currentAsset'),sum('cash')]);const liabilities=add([sum('noncurrentLiability'),sum('currentLiability')]);const equity=add([sum('capital'),sum('reserve'),sum('retained'),sum('owner')]);const cf=s.cash[p],e=s.equity[p];const operating=add([profit,cf.noncash,cf.working,cf.operatingOther]);const change=add([operating,cf.investing,cf.financing,cf.fx]);const close={capital:add([e.openCapital,e.capitalMovement]),reserve:add([e.openReserve,e.reserveTransfer,sum('oci')]),retained:add([e.openRetained,profit,-e.reserveTransfer,-e.dividends,e.otherRetained]),owner:add([e.openOwner,e.ownerMovement])};return {sum,profit,gross:add([sum('revenue'),-sum('cost')]),comprehensive:add([profit,sum('oci')]),assets,liabilities,equity,balance:add([assets,-liabilities,-equity]),operating,change,closingCash:add([cf.opening,change]),cashDifference:add([cf.opening,change,-sum('cash')]),close,equityDifferences:Object.keys(close).map(k=>({key:k,value:add([close[k],-sum(k)])}))};}
-function fresh(demo=false){const now=new Date().getFullYear()-1;const pair=keys=>Object.fromEntries(Object.keys(keys).map(k=>[k,0]));const s={version:1,demo,company:{name:demo?'Example Trading LLC':'',address:'',activity:'',registration:'',manager:'',start:`${now}-01-01`,end:`${now}-12-31`,priorStart:`${now-1}-01-01`,priorEnd:`${now-1}-12-31`,currency:'AED',comparative:true,style:'classic'},rows:[],cash:{current:pair(cashFields),prior:pair(cashFields)},equity:{current:pair(eqFields),prior:pair(eqFields)},management:'',notes:[{id:'n1',title:'Reporting entity and principal activity',body:''},{id:'n2',title:'Basis of preparation and accounting policies',body:''},{id:'n3',title:'Estimates and judgements',body:''},{id:'n4',title:'Related parties',body:''},{id:'n5',title:'Commitments and contingencies',body:''},{id:'n6',title:'Events after the reporting period',body:''}]};
-const defaults=[['Revenue','revenue',1000000,800000],['Cost of sales','cost',600000,500000],['Other income','otherIncome',0,0],['Administrative and selling expenses','expense',200000,160000],['Finance costs','finance',10000,10000],['Income tax expense','tax',0,0],['Other comprehensive income','oci',0,0],['Property, plant and equipment, net','noncurrentAsset',250000,200000],['Inventories','currentAsset',150000,130000],['Trade and other receivables','currentAsset',200000,180000],['Cash and bank balances','cash',190000,100000],['Employee benefit obligations','noncurrentLiability',20000,15000],['Borrowings','noncurrentLiability',100000,105000],['Trade and other payables','currentLiability',180000,145000],['Share capital','capital',300000,300000],['Statutory reserve','reserve',0,0],['Retained earnings / (accumulated losses)','retained',190000,45000],['Shareholders’ current account','owner',0,0]];
-s.rows=defaults.map((r,i)=>({id:'r'+i,label:r[0],group:r[1],current:demo?r[2]:0,prior:demo?r[3]:0,note:''}));if(demo){Object.assign(s.cash.current,{opening:100000,noncash:30000,working:-5000,investing:-75000,financing:-50000});Object.assign(s.cash.prior,{opening:60000,noncash:20000,working:-30000,investing:-60000,financing:-20000});Object.assign(s.equity.current,{openCapital:300000,openRetained:45000,dividends:45000});Object.assign(s.equity.prior,{openCapital:300000,openRetained:-65000,dividends:20000});s.management='Illustrative report only. Replace this text with management’s report, including activities, results and relevant developments.';}return s;}
-function validate(s){if(!s||s.version!==1)throw Error('Unsupported backup format.');const t=fresh();if(!s.company||!Array.isArray(s.rows)||s.rows.length>500||!Array.isArray(s.notes)||s.notes.length>100)throw Error('Invalid backup structure.');const str=(v,max=50000)=>{if(typeof v!=='string'||v.length>max)throw Error('Invalid text in backup.');return v};for(const k of Object.keys(t.company)){if(typeof t.company[k]==='boolean'){if(typeof s.company[k]!=='boolean')throw Error('Invalid report setting.');}else str(s.company[k],2000);}if(!['classic','ruled'].includes(s.company.style))throw Error('Invalid report style.');const num=v=>{if(typeof v!=='number'||!Number.isFinite(v)||Math.abs(v)>1e12)throw Error('Invalid amount in backup.');};const ids=new Set();s.rows.forEach(r=>{str(r.id,100);if(ids.has(r.id))throw Error('Duplicate row.');ids.add(r.id);str(r.label,1000);str(r.note,100);if(!Object.hasOwn(groups,r.group))throw Error('Unknown account group.');num(r.current);num(r.prior)});for(const p of ['current','prior'])for(const [obj,fields] of [['cash',cashFields],['equity',eqFields]]){if(!s[obj]?.[p])throw Error('Missing schedule.');for(const k of Object.keys(fields))num(s[obj][p][k]);}const notes=new Set();s.notes.forEach(n=>{str(n.id,100);if(notes.has(n.id))throw Error('Duplicate note.');notes.add(n.id);str(n.title,1000);str(n.body);if(n.autoGroup!==undefined){if(!Object.hasOwn(groups,n.autoGroup))throw Error('Invalid automatic note category.');if(n.autoReviewed!==undefined)str(n.autoReviewed,250000);}});str(s.management);if(s.comparisonSettings!==undefined){for(const k of ['amount','percent']){num(s.comparisonSettings[k]);if(s.comparisonSettings[k]<0)throw Error('Invalid comparison threshold.');}}if(root.HoistModel)root.HoistModel.validate(s);return s;}
-root.StatementEngine={groups,cashFields,eqFields,calc,fresh,validate,add};if(typeof module!=='undefined')module.exports=root.StatementEngine;
+(function (root) {
+    'use strict';
+    const groups = {
+        revenue: 'Revenue',
+        cost: 'Cost of sales',
+        otherIncome: 'Other income',
+        expense: 'Operating expenses',
+        finance: 'Finance costs',
+        tax: 'Income tax expense',
+        oci: 'Other comprehensive income',
+        noncurrentAsset: 'Non-current assets',
+        currentAsset: 'Current assets (excluding cash)',
+        cash: 'Cash and cash equivalents',
+        noncurrentLiability: 'Non-current liabilities',
+        currentLiability: 'Current liabilities',
+        capital: 'Share capital',
+        reserve: 'Reserves',
+        retained: 'Retained earnings / accumulated losses',
+        owner: 'Shareholders’ current account',
+    };
+    const cashFields = {
+        opening: 'Opening cash and cash equivalents',
+        noncash: 'Depreciation and other non-cash adjustments',
+        working: 'Working capital movements',
+        operatingOther: 'Other operating adjustments / payments',
+        investing: 'Net investing cash flows',
+        financing: 'Net financing cash flows',
+        fx: 'Exchange effect on cash',
+    };
+    const eqFields = {
+        openCapital: 'Opening share capital',
+        openReserve: 'Opening reserves',
+        openRetained: 'Opening retained earnings',
+        openOwner: 'Opening shareholders’ account',
+        capitalMovement: 'Capital introduced / (repaid)',
+        reserveTransfer: 'Transfer from retained earnings to reserves',
+        dividends: 'Dividends (enter positive)',
+        ownerMovement: 'Shareholders’ account movement',
+        otherRetained: 'Other retained earnings adjustments',
+    };
+    const cents = (n) => Math.round(Number(n) * 100);
+    const add = (arr) => arr.reduce((a, b) => a + cents(b), 0) / 100;
+    function calc(s, p) {
+        const sum = (k) => add(s.rows.filter((r) => r.group === k).map((r) => r[p]));
+        const profit = add([
+            sum('revenue'),
+            -sum('cost'),
+            sum('otherIncome'),
+            -sum('expense'),
+            -sum('finance'),
+            -sum('tax'),
+        ]);
+        const assets = add([sum('noncurrentAsset'), sum('currentAsset'), sum('cash')]);
+        const liabilities = add([sum('noncurrentLiability'), sum('currentLiability')]);
+        const equity = add([sum('capital'), sum('reserve'), sum('retained'), sum('owner')]);
+        const cf = s.cash[p],
+            e = s.equity[p];
+        const operating = add([profit, cf.noncash, cf.working, cf.operatingOther]);
+        const change = add([operating, cf.investing, cf.financing, cf.fx]);
+        const close = {
+            capital: add([e.openCapital, e.capitalMovement]),
+            reserve: add([e.openReserve, e.reserveTransfer, sum('oci')]),
+            retained: add([
+                e.openRetained,
+                profit,
+                -e.reserveTransfer,
+                -e.dividends,
+                e.otherRetained,
+            ]),
+            owner: add([e.openOwner, e.ownerMovement]),
+        };
+        return {
+            sum,
+            profit,
+            gross: add([sum('revenue'), -sum('cost')]),
+            comprehensive: add([profit, sum('oci')]),
+            assets,
+            liabilities,
+            equity,
+            balance: add([assets, -liabilities, -equity]),
+            operating,
+            change,
+            closingCash: add([cf.opening, change]),
+            cashDifference: add([cf.opening, change, -sum('cash')]),
+            close,
+            equityDifferences: Object.keys(close).map((k) => ({
+                key: k,
+                value: add([close[k], -sum(k)]),
+            })),
+        };
+    }
+    function fresh(demo = false) {
+        const now = new Date().getFullYear() - 1;
+        const pair = (keys) => Object.fromEntries(Object.keys(keys).map((k) => [k, 0]));
+        const s = {
+            version: 1,
+            demo,
+            company: {
+                name: demo ? 'Example Trading LLC' : '',
+                address: '',
+                activity: '',
+                registration: '',
+                manager: '',
+                start: `${now}-01-01`,
+                end: `${now}-12-31`,
+                priorStart: `${now - 1}-01-01`,
+                priorEnd: `${now - 1}-12-31`,
+                currency: 'AED',
+                comparative: true,
+                style: 'classic',
+            },
+            rows: [],
+            cash: { current: pair(cashFields), prior: pair(cashFields) },
+            equity: { current: pair(eqFields), prior: pair(eqFields) },
+            management: '',
+            notes: [
+                { id: 'n1', title: 'Reporting entity and principal activity', body: '' },
+                { id: 'n2', title: 'Basis of preparation and accounting policies', body: '' },
+                { id: 'n3', title: 'Estimates and judgements', body: '' },
+                { id: 'n4', title: 'Related parties', body: '' },
+                { id: 'n5', title: 'Commitments and contingencies', body: '' },
+                { id: 'n6', title: 'Events after the reporting period', body: '' },
+            ],
+        };
+        const defaults = [
+            ['Revenue', 'revenue', 1000000, 800000],
+            ['Cost of sales', 'cost', 600000, 500000],
+            ['Other income', 'otherIncome', 0, 0],
+            ['Administrative and selling expenses', 'expense', 200000, 160000],
+            ['Finance costs', 'finance', 10000, 10000],
+            ['Income tax expense', 'tax', 0, 0],
+            ['Other comprehensive income', 'oci', 0, 0],
+            ['Property, plant and equipment, net', 'noncurrentAsset', 250000, 200000],
+            ['Inventories', 'currentAsset', 150000, 130000],
+            ['Trade and other receivables', 'currentAsset', 200000, 180000],
+            ['Cash and bank balances', 'cash', 190000, 100000],
+            ['Employee benefit obligations', 'noncurrentLiability', 20000, 15000],
+            ['Borrowings', 'noncurrentLiability', 100000, 105000],
+            ['Trade and other payables', 'currentLiability', 180000, 145000],
+            ['Share capital', 'capital', 300000, 300000],
+            ['Statutory reserve', 'reserve', 0, 0],
+            ['Retained earnings / (accumulated losses)', 'retained', 190000, 45000],
+            ['Shareholders’ current account', 'owner', 0, 0],
+        ];
+        s.rows = defaults.map((r, i) => ({
+            id: 'r' + i,
+            label: r[0],
+            group: r[1],
+            current: demo ? r[2] : 0,
+            prior: demo ? r[3] : 0,
+            note: '',
+        }));
+        if (demo) {
+            Object.assign(s.cash.current, {
+                opening: 100000,
+                noncash: 30000,
+                working: -5000,
+                investing: -75000,
+                financing: -50000,
+            });
+            Object.assign(s.cash.prior, {
+                opening: 60000,
+                noncash: 20000,
+                working: -30000,
+                investing: -60000,
+                financing: -20000,
+            });
+            Object.assign(s.equity.current, {
+                openCapital: 300000,
+                openRetained: 45000,
+                dividends: 45000,
+            });
+            Object.assign(s.equity.prior, {
+                openCapital: 300000,
+                openRetained: -65000,
+                dividends: 20000,
+            });
+            s.management =
+                'Illustrative report only. Replace this text with management’s report, including activities, results and relevant developments.';
+        }
+        return s;
+    }
+    function validate(s) {
+        if (!s || s.version !== 1) throw Error('Unsupported backup format.');
+        const t = fresh();
+        if (
+            !s.company ||
+            !Array.isArray(s.rows) ||
+            s.rows.length > 500 ||
+            !Array.isArray(s.notes) ||
+            s.notes.length > 100
+        )
+            throw Error('Invalid backup structure.');
+        const str = (v, max = 50000) => {
+            if (typeof v !== 'string' || v.length > max) throw Error('Invalid text in backup.');
+            return v;
+        };
+        for (const k of Object.keys(t.company)) {
+            if (typeof t.company[k] === 'boolean') {
+                if (typeof s.company[k] !== 'boolean') throw Error('Invalid report setting.');
+            } else str(s.company[k], 2000);
+        }
+        if (!['classic', 'ruled'].includes(s.company.style)) throw Error('Invalid report style.');
+        const num = (v) => {
+            if (typeof v !== 'number' || !Number.isFinite(v) || Math.abs(v) > 1e12)
+                throw Error('Invalid amount in backup.');
+        };
+        const ids = new Set();
+        s.rows.forEach((r) => {
+            str(r.id, 100);
+            if (ids.has(r.id)) throw Error('Duplicate row.');
+            ids.add(r.id);
+            str(r.label, 1000);
+            str(r.note, 100);
+            if (!Object.hasOwn(groups, r.group)) throw Error('Unknown account group.');
+            num(r.current);
+            num(r.prior);
+        });
+        for (const p of ['current', 'prior'])
+            for (const [obj, fields] of [
+                ['cash', cashFields],
+                ['equity', eqFields],
+            ]) {
+                if (!s[obj]?.[p]) throw Error('Missing schedule.');
+                for (const k of Object.keys(fields)) num(s[obj][p][k]);
+            }
+        const notes = new Set();
+        s.notes.forEach((n) => {
+            str(n.id, 100);
+            if (notes.has(n.id)) throw Error('Duplicate note.');
+            notes.add(n.id);
+            str(n.title, 1000);
+            str(n.body);
+            if (n.autoGroup !== undefined) {
+                if (!Object.hasOwn(groups, n.autoGroup))
+                    throw Error('Invalid automatic note category.');
+                if (n.autoReviewed !== undefined) str(n.autoReviewed, 250000);
+            }
+        });
+        str(s.management);
+        if (s.comparisonSettings !== undefined) {
+            for (const k of ['amount', 'percent']) {
+                num(s.comparisonSettings[k]);
+                if (s.comparisonSettings[k] < 0) throw Error('Invalid comparison threshold.');
+            }
+        }
+        if (root.HoistModel) root.HoistModel.validate(s);
+        return s;
+    }
+    root.StatementEngine = { groups, cashFields, eqFields, calc, fresh, validate, add };
+    if (typeof module !== 'undefined') module.exports = root.StatementEngine;
 })(globalThis);
