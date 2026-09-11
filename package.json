@@ -1,0 +1,47 @@
+{
+  "name": "statement-studio",
+  "productName": "Statement Studio",
+  "version": "1.0.0",
+  "description": "Offline financial statement preparation",
+  "main": "main.js",
+  "author": "Statement Studio",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "build": "node build.js",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.statementstudio.app",
+    "productName": "Statement Studio",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "Statement Studio.html"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Statement Studio"
+    }
+  }
+}

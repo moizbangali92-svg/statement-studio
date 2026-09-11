@@ -1,0 +1,6 @@
+Account Code,Account Name,Debit,Credit,Category
+1000,Cash and bank balances,1400,0,cash
+3000,Share capital,0,1000,capital
+4000,Revenue,0,1000,revenue
+5000,Cost of sales,600,0,cost
+,Total,2000,2000,

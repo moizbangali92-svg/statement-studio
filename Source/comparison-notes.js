@@ -1,0 +1,17 @@
+(function(root){
+'use strict';
+const E=root.StatementEngine||(typeof require==='function'?require('./engine.js'):null);
+const settings=s=>s.comparisonSettings||{amount:10000,percent:10};
+const fmt=n=>{const a=Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});return n<0?'('+a+')':a;};
+function movement(current,prior){const change=E.add([current,-prior]);let status=change===0?'Unchanged':prior===0?'New balance':current===0?'Balance cleared':current*prior<0?'Sign reversal':change>0?'Increase':'Decrease';const percent=prior>0&&current>=0?change/prior*100:null;return {change,percent,status};}
+function detail(s,n){const config=settings(s),rows=s.rows.filter(r=>r.group===n.autoGroup);const current=E.add(rows.map(r=>r.current)),prior=E.add(rows.map(r=>r.prior));const describe=(label,c,p)=>{const m=movement(c,p),currency=s.company.currency; if(!s.company.comparative)return `${label} amounted to ${currency} ${fmt(c)} at the current period end.`;if(m.change===0)return `${label} remained at ${currency} ${fmt(c)} (comparative: ${fmt(p)}).`;if(p===0)return `${label} amounted to ${currency} ${fmt(c)}, compared with a nil comparative balance. A percentage change is not applicable.`;if(c===0)return `${label} reduced to nil from ${currency} ${fmt(p)}.`;return `${label} ${c>=0&&p>0?(m.change>0?'increased':'decreased'):'changed'} from ${currency} ${fmt(p)} to ${currency} ${fmt(c)}, a movement of ${currency} ${fmt(m.change)}${m.percent===null?'. A percentage change is not meaningful for these signed balances.':` (${Math.abs(m.percent).toFixed(1)}% ${m.change>0?'increase':'decrease'}).`}`;};
+ const items=rows.map(r=>{const m=movement(r.current,r.prior);const significant=s.company.comparative&&Math.abs(m.change)>=config.amount&&m.change!==0&&(m.percent===null||Math.abs(m.percent)>=config.percent);return {...r,...m,significant};});
+ const total=movement(current,prior);const totalSignificant=s.company.comparative&&Math.abs(total.change)>=config.amount&&total.change!==0&&(total.percent===null||Math.abs(total.percent)>=config.percent);
+ const narrative=[describe(E.groups[n.autoGroup],current,prior),...items.filter(r=>r.significant&&(items.length>1)).map(r=>describe(r.label,r.current,r.prior))].join('\n\n');
+ const fingerprint=JSON.stringify([s.company.currency,s.company.start,s.company.end,s.company.priorStart,s.company.priorEnd,s.company.comparative,config,items.map(r=>[r.id,r.label,r.current,r.prior])]);
+ return {items,current,prior,total,narrative,needsExplanation:totalSignificant||items.some(r=>r.significant),reviewed:n.autoReviewed===fingerprint,fingerprint};
+}
+function generate(s){if(!s.company.comparative)throw Error('Enable comparative figures in Company details first.');const next=structuredClone(s);let added=0;for(const group of Object.keys(E.groups)){const rows=next.rows.filter(r=>r.group===group&&(r.current!==0||r.prior!==0));if(!rows.length)continue;let note=next.notes.find(n=>n.autoGroup===group);if(!note){if(next.notes.length>=100)throw Error('Maximum 100 notes. Remove unused notes first.');note={id:'comparison-'+group+'-'+Date.now(),title:E.groups[group],body:'',autoGroup:group,autoReviewed:''};next.notes.push(note);added++;}for(const r of next.rows.filter(r=>r.group===group))if(!r.note)r.note=note.id;}
+ if(!next.notes.some(n=>n.autoGroup))throw Error('Enter or import current and comparative figures first.');return {state:next,added};}
+root.ComparisonNotes={settings,movement,detail,generate};if(typeof module!=='undefined')module.exports=root.ComparisonNotes;
+})(globalThis);
