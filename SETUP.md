@@ -53,6 +53,14 @@ on an identical build; its length was unchanged at 80,664.
 localStorage adapter against an in-memory work-alike, so they exercise the same
 code path the browser build uses. Run them before packaging.
 
+Nothing else has unit tests, so changes to the statement engine, report builder
+or PDF are checked with the fingerprint harness instead:
+
+    node tools/fingerprint.js record before.json
+    node tools/fingerprint.js compare before.json after.json
+
+See CLAUDE.md for what it covers and how it resolves a browser.
+
 ## Desktop app
 
     npm install

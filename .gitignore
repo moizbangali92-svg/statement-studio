@@ -6,3 +6,7 @@ dist/
 Backups/
 Reports/
 *.pdf
+
+# Fingerprint recordings from tools/fingerprint.js.
+*.fingerprint.json
+fingerprints/

@@ -149,10 +149,30 @@ only the `cs:*` IPC surface; the renderer never sees Node.
 
 ## Verifying a change
 
-The 13 tests cover storage only. Nothing automatically covers the accounting
-engine, the report builder or the PDF, so for changes there, drive the app in a
-browser over `serve.js` and compare output before and after. The reformat commit
-(`7c10d75`) used an AST-equivalence check plus a Chromium fingerprint harness
-comparing the computed model, the readiness checks, every tab's DOM and the
-generated PDF; that approach is a reasonable template for any refactor claiming
-to preserve behaviour.
+`test-import.js` covers storage only. The statement engine, the report builder,
+the trial-balance parser and the PDF have no unit tests, so behaviour there is
+guarded by a fingerprint harness instead:
+
+    node build.js
+    node tools/fingerprint.js record before.json
+    # ...make the change...
+    node build.js
+    node tools/fingerprint.js record after.json
+    node tools/fingerprint.js compare before.json after.json    # exit 1 on a difference
+
+It drives the built bundle in a real browser and hashes 48 stable fingerprints:
+the computed model, readiness checks, periods, applicable policies, the tax
+calc, the trial-balance parser and amount coercion, and every tab's rendered DOM
+twice - once over a blank company (guards UI structure) and once with `state`
+swapped for the sample report (makes the same DOM sensitive to the arithmetic).
+The 49th, the PDF's raw bytes, is reported but never fails a comparison:
+pdf-lib is not byte-deterministic. The PDF's length is compared normally.
+
+It is a regression net, not a test suite - it says "this changed", never "this
+is correct", so record the baseline before touching anything. It is sensitive:
+flipping one sign in `StatementEngine.calc`'s profit formula moves 15 keys.
+
+Needs Chrome, Edge, or a Playwright chromium; resolution order is
+`$PW_EXECUTABLE`, the `chrome` channel, `msedge`, then anything under
+`$PLAYWRIGHT_BROWSERS_PATH`. `playwright-core` is a devDependency and pulls no
+browser of its own.
